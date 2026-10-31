@@ -1,39 +1,80 @@
+
 name: CI
 
-# Controls when the action will run. Triggers the workflow on push or pull request
-# events but only for the master branch
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
-    branches: [ master ]
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
+    name: Build GUI (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
+
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04-arm]
+        include:
+          - os: ubuntu-24.04
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: aarch64
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          submodules: 'recursive'
-          fetch-depth: 0 # submodule checkout does not work with depth=1 (the default)
+          submodules: recursive
+          fetch-depth: 0
 
-      - name: Install dependencies
+      - name: Install Qt and build dependencies
         run: |
-          sudo apt update
-          sudo apt install -y qtbase5-dev qtdeclarative5-dev
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            qtbase5-dev \
+            qtdeclarative5-dev \
+            qtquickcontrols2-5-dev \
+            qt5-qmake \
+            zlib1g-dev \
+            binutils
 
-      - name: Build firebird-headless
-        working-directory: headless
-        run: make -j8
-
-      - name: Build firebird
+      - name: Configure GUI application
         run: |
-          mkdir build
-          cd build
-          qmake ..
-          make -j4
+          qmake firebird.pro CONFIG+=release
+
+      - name: Build GUI application
+        run: |
+          make -j2
+
+      - name: Verify executable
+        run: |
+          set -eux
+          test -f firebird-emu
+          file firebird-emu
+          chmod +x firebird-emu
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p artifacts
+          cp firebird-emu artifacts/
+          cp resources/org.firebird-emus.firebird-emu.png artifacts/ 2>/dev/null || true
+          printf 'Architecture: %s\n' '${{ matrix.arch }}' > artifacts/BUILD-INFO.txt
+          printf 'Commit: %s\n' '${{ github.sha }}' >> artifacts/BUILD-INFO.txt
+
+      - name: Upload GUI executable
+        uses: actions/upload-artifact@v6
+        with:
+          name: firebird-gui-linux-${{ matrix.arch }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
