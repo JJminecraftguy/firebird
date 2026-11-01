@@ -966,7 +966,7 @@ bool QQuickWidgetLessBroken::event(QEvent *event)
 {
     if(event->type() == QEvent::Leave)
     {
-        QMouseEvent ev(QMouseEvent::MouseMove, QPointF(0, 0), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QMouseEvent ev(QEvent::MouseMove, QPointF(0, 0), QPointF(0, 0), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
         QQuickWidget::event(&ev);
     }
 

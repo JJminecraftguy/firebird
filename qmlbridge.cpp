@@ -646,12 +646,9 @@ QString QMLBridge::getSnapshotPath()
 
 bool QMLBridge::saveDialogSupported()
 {
-    #ifdef Q_OS_ANDROID
-        // Starting with Qt 5.13, the Android "File Picker" is used, but that doesn't allow creation of files.
-        return QVersionNumber::fromString(QString::fromUtf8(qVersion())) < QVersionNumber(5, 13);
-    #else
-        return true;
-    #endif
+    // With Qt 5.13 - 5.15, the Android "File Picker" didn't allow creation of files.
+    // Qt 6 uses ACTION_CREATE_DOCUMENT for save dialogs.
+    return true;
 }
 
 void QMLBridge::speedChanged(double speed)

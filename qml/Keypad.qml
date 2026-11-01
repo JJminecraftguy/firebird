@@ -1,8 +1,7 @@
 import Firebird.Emu 1.0
 
-import QtQuick 2.3
-import QtQuick.Layouts 1.0
-
+import QtQuick
+import QtQuick.Layouts
 Rectangle {
     id: rectangle1
     width: 265

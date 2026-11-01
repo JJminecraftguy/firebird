@@ -1,6 +1,5 @@
 pragma Singleton
-import QtQuick 2.0
-
+import QtQuick
 QtObject {
     property bool gdbEnabled: true
     property int gdbPort: 3333

@@ -1,4 +1,4 @@
-import QtQuick 2.0
+import QtQuick
 import Firebird.Emu 1.0
 
 Rectangle {
@@ -116,7 +116,7 @@ Rectangle {
             submitState();
         }
 
-        onPressed: {
+        onPressed: function(mouse) {
             origX = mouse.x;
             origY = mouse.y;
             isDown = false;

@@ -1,7 +1,7 @@
-import QtQuick 2.0
-import QtQuick.Controls 1.0
-import QtQuick.Dialogs 1.1
-import QtQuick.Layouts 1.0
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Dialogs
+import QtQuick.Layouts
 import Firebird.Emu 1.0
 import Firebird.UIComponents 1.0
 
@@ -10,7 +10,7 @@ ColumnLayout {
 
     FBLabel {
         text: qsTr("File Transfer")
-        font.pixelSize: TextMetrics.title2Size
+        font.pixelSize: FBTextMetrics.title2Size
         Layout.topMargin: 5
         Layout.bottomMargin: 5
     }
@@ -19,7 +19,7 @@ ColumnLayout {
         Layout.fillWidth: true
         wrapMode: Text.WordWrap
         text: qsTr("If you are unable to use the main window's file transfer using either drag'n'drop or the file explorer, you can send files here.")
-        font.pixelSize: TextMetrics.normalSize
+        font.pixelSize: FBTextMetrics.normalSize
         visible: !Emu.isMobile()
     }
 
@@ -27,7 +27,7 @@ ColumnLayout {
         Layout.fillWidth: true
         wrapMode: Text.WordWrap
         text: qsTr("Here you can send files into the target folder specified below.")
-        font.pixelSize: TextMetrics.normalSize
+        font.pixelSize: FBTextMetrics.normalSize
     }
 
     Loader {
@@ -35,12 +35,12 @@ ColumnLayout {
         active: false
         sourceComponent: FileDialog {
             nameFilters: [ qsTr("TNS Documents") +"(*.tns)", qsTr("Operating Systems") + "(*.tno *.tnc *.tco *.tcc *.tlo *.tmo *.tmc *.tco2 *.tcc2 *.tct2)" ]
-            selectMultiple: true
+            fileMode: FileDialog.OpenFiles
             onAccepted: {
                 transferStatus.text = qsTr("Starting");
                 transferProgress.indeterminate = true;
-                for(let i = 0; i < fileUrls.length; ++i)
-                    Emu.sendFile(fileUrls[i], Emu.usbdir);
+                for(let i = 0; i < selectedFiles.length; ++i)
+                    Emu.sendFile(selectedFiles[i], Emu.usbdir);
             }
         }
     }
@@ -104,13 +104,13 @@ ColumnLayout {
     ProgressBar {
         id: transferProgress
         Layout.fillWidth: true
-        minimumValue: 0
-        maximumValue: 100
+        from: 0
+        to: 100
     }
 
     FBLabel {
         text: qsTr("Target Directory")
-        font.pixelSize: TextMetrics.title2Size
+        font.pixelSize: FBTextMetrics.title2Size
         Layout.topMargin: 5
         Layout.bottomMargin: 5
     }
@@ -119,7 +119,7 @@ ColumnLayout {
         Layout.fillWidth: true
         wrapMode: Text.WordWrap
         text: qsTr("When dragging files onto Firebird, it will try to send them to the emulated system.")
-        font.pixelSize: TextMetrics.normalSize
+        font.pixelSize: FBTextMetrics.normalSize
     }
 
     RowLayout {

@@ -1,10 +1,11 @@
-import QtQuick 2.0
-import QtQuick.Controls 1.3
-import QtQuick.Layouts 1.0
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
 import Firebird.UIComponents 1.0
 
 ToolButton {
-    property alias icon: image.source
+    // QQC2 buttons already have an "icon" group property
+    property alias iconSource: image.source
     property alias title: label.text
 
     Rectangle {
@@ -24,7 +25,7 @@ ToolButton {
 
         horizontalAlignment: Text.AlignHCenter
         fontSizeMode: Text.HorizontalFit
-        font.pixelSize: TextMetrics.normalSize
+        font.pixelSize: FBTextMetrics.normalSize
         width: parent.width
     }
 

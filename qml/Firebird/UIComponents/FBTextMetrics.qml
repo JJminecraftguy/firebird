@@ -1,6 +1,5 @@
 pragma Singleton
-import QtQuick 2.0
-
+import QtQuick
 Item {
     property int normalSize: defaultFont.font.pixelSize
     property int title1Size: defaultFont.font.pixelSize * 1.2

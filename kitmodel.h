@@ -21,7 +21,7 @@ public:
         Boot1Role,
         SnapshotRole
     };
-    Q_ENUMS(Role)
+    Q_ENUM(Role)
 
     KitModel() = default;
     KitModel(const KitModel &other) : QAbstractListModel() { kits = other.kits; nextID = other.nextID; }

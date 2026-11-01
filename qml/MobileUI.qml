@@ -1,11 +1,10 @@
 import Firebird.Emu 1.0
 import Firebird.UIComponents 1.0
 
-import QtQuick 2.0
-import QtQuick.Controls 1.2
-import QtQuick.Dialogs 1.1
-import QtQuick.Layouts 1.0
-
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Dialogs
+import QtQuick.Layouts
 ApplicationWindow {
     id: app
     title: "Firebird Emu"
@@ -49,7 +48,7 @@ ApplicationWindow {
         }
     }
 
-    onClosing: {
+    onClosing: function(close) {
         if(!Emu.isRunning || !Emu.suspendOnClose || ignoreSuspendOnClose)
             return;
 
@@ -60,12 +59,14 @@ ApplicationWindow {
 
     MessageDialog {
         id: suspendFailedDialog
-        standardButtons: StandardButton.Yes | StandardButton.No
-        icon: StandardIcon.Warning
+        buttons: MessageDialog.Yes | MessageDialog.No
         title: qsTr("Suspend failed")
         text: qsTr("Suspending the emulation failed. Do you still want to quit Firebird?")
 
-        onYes: {
+        onButtonClicked: function(button, role) {
+            if(button !== MessageDialog.Yes)
+                return;
+
             ignoreSuspendOnClose = true;
             app.close();
         }
@@ -73,7 +74,7 @@ ApplicationWindow {
 
     Connections {
         target: Emu
-        onEmuSuspended: {
+        function onEmuSuspended(success) {
             if(closeAfterSuspend)
             {
                 closeAfterSuspend = false;
@@ -87,14 +88,14 @@ ApplicationWindow {
                     suspendFailedDialog.visible = true;
             }
         }
-        onToastMessage: {
+        function onToastMessage(msg) {
             toast.showMessage(msg);
         }
     }
 
     Connections {
         target: Qt.application
-        onStateChanged: {
+        function onStateChanged() {
             switch (Qt.application.state)
             {
                 case Qt.ApplicationSuspended: // Might be reaped on mobile
@@ -192,7 +193,7 @@ ApplicationWindow {
                 listView.pageX[index] = x;
             }
 
-            width: modelData === "MobileUIDrawer.qml" ? loader.item.implicitWidth : app.width
+            width: (modelData === "MobileUIDrawer.qml" && loader.item) ? loader.item.implicitWidth : app.width
             height: app.height
 
             Rectangle {

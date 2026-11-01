@@ -1,30 +1,35 @@
-import QtQuick 2.0
-import QtQuick.Layouts 1.1
-import QtQuick.Controls 1.2
-import QtQuick.Dialogs 1.3
+import QtQuick
+import QtQuick.Layouts
+import QtQuick.Controls
+import QtQuick.Dialogs
 import Firebird.Emu 1.0
 import Firebird.UIComponents 1.0
 
-Dialog {
+// Qt Quick Controls 2 has no window based Dialog, so this is a plain Window.
+Window {
     id: flashDialog
     title: qsTr("Create Flash Image")
-    // Work around QTBUG-89607: Menu (used by ComboBox) doesn't work in modal windows
-    modality: Qt.platform.pluginName == "cocoa" ? Qt.NonModal : Qt.WindowModal
-    standardButtons: Dialog.Save | Dialog.Cancel
-    onVisibleChanged: {
-        // For some reason the initial size on wayland is too big.
-        // Setting it to -1 initially appears to work around that.
-        if (Qt.platform.pluginName.startsWith("wayland")) {
-            width = -1;
-            height = -1;
-        }
+    modality: Qt.WindowModal
+    flags: Qt.Dialog
+
+    // The layout's height depends on which rows are visible
+    minimumWidth: 400
+    minimumHeight: layout.implicitHeight + 2 * layout.anchors.margins
+    width: Math.max(minimumWidth, layout.implicitWidth + 2 * layout.anchors.margins)
+    height: minimumHeight
+
+    SystemPalette {
+        id: paletteActive
     }
+
+    color: paletteActive.window
 
     signal flashCreated(string filePath)
 
     GridLayout {
         id: layout
-        width: parent.width
+        anchors.fill: parent
+        anchors.margins: 5
         columns: 2
 
         FBLabel {
@@ -144,6 +149,32 @@ Dialog {
             color: "red"
             text: parent.validationText
         }
+
+        Item {
+            Layout.fillHeight: true
+            Layout.columnSpan: 2
+        }
+
+        RowLayout {
+            Layout.columnSpan: 2
+            Layout.alignment: Qt.AlignRight
+
+            Button {
+                text: qsTr("Cancel")
+                onClicked: flashDialog.visible = false
+            }
+
+            Button {
+                text: qsTr("Save")
+                enabled: layout.validationText === ""
+                onClicked: {
+                    // Don't close the dialog now, but only
+                    // after successful saving
+                    fileDialogLoader.active = true;
+                    fileDialogLoader.item.visible = true;
+                }
+            }
+        }
     }
 
     MessageDialog {
@@ -156,9 +187,9 @@ Dialog {
         id: fileDialogLoader
         active: false
         sourceComponent: FileDialog {
-            selectExisting: false
+            fileMode: FileDialog.SaveFile
             onAccepted: {
-                var filePath = Emu.toLocalFile(fileUrl);
+                var filePath = Emu.toLocalFile(selectedFile);
                 var success = false;
                 if (!modelCombo.cx2Selected)
                     success = Emu.createFlash(filePath, modelCombo.productId, subtypeCombo.featureValue, manufSelect.filePath, boot2Select.filePath, osSelect.filePath, diagsSelect.filePath);
@@ -171,19 +202,6 @@ Dialog {
                 }
                 else
                     failureDialog.visible = true;
-            }
-        }
-    }
-
-    onActionChosen: {
-        if (action.button === Dialog.Save) {
-            // Don't close the dialog now, but only
-            // after successful saving
-            action.accepted = false;
-
-            if (!layout.validationText) {
-                fileDialogLoader.active = true;
-                fileDialogLoader.item.visible = true;
             }
         }
     }

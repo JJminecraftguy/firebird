@@ -1,5 +1,4 @@
-import QtQuick 2.0
-
+import QtQuick
 Rectangle {
     property alias text: label.text
     signal clicked
@@ -19,12 +18,12 @@ Rectangle {
         property point orig;
         anchors.fill: parent
 
-        onPressed: {
+        onPressed: function(mouse) {
             orig.x = mouse.x;
             orig.y = mouse.y;
         }
 
-        onReleased: {
+        onReleased: function(mouse) {
             if(Math.abs(orig.x - mouse.x) < 5
                && Math.abs(orig.y - mouse.y) < 5)
             parent.clicked();

@@ -1,6 +1,6 @@
-import QtQuick 2.0
-import QtQuick.Controls 1.3
-import QtQuick.Layouts 1.0
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
 import Firebird.UIComponents 1.0
 
 Rectangle {
@@ -88,7 +88,7 @@ Rectangle {
             bottom: parent.bottom
         }
 
-        font.pixelSize: TextMetrics.title2Size
+        font.pixelSize: FBTextMetrics.title2Size
         verticalAlignment: Text.AlignVCenter
     }
 }

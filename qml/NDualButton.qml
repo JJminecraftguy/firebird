@@ -1,5 +1,4 @@
-import QtQuick 2.0
-
+import QtQuick
 Rectangle {
     id: rectangle3
     property alias text1: nbutton1.text

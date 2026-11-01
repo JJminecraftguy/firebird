@@ -1,7 +1,7 @@
-import QtQuick 2.0
-import QtQuick.Window 2.2
-import QtQuick.Controls 1.2
-import QtQuick.Layouts 1.0
+import QtQuick
+import QtQuick.Window
+import QtQuick.Controls
+import QtQuick.Layouts
 import Firebird.UIComponents 1.0
 
 Window {

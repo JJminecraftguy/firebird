@@ -1,4 +1,4 @@
-import QtQuick 2.0
+import QtQuick
 import Firebird.Emu 1.0
 
 Rectangle {
@@ -63,7 +63,7 @@ Rectangle {
         width: parent.width * 1.3
         height: parent.height * 1.3
 
-        onTouchUpdated: {
+        onTouchUpdated: function(touchPoints) {
             var newState = false;
             for(var i in touchPoints)
             {
@@ -95,7 +95,7 @@ Rectangle {
 
         hoverEnabled: !Emu.isMobile()
 
-        onPressed: {
+        onPressed: function(mouse) {
             mouse.accepted = true;
 
             if(mouse.button == Qt.LeftButton)
@@ -110,7 +110,7 @@ Rectangle {
             }
         }
 
-        onReleased: {
+        onReleased: function(mouse) {
             mouse.accepted = true;
 
             if(mouse.button == Qt.LeftButton

@@ -1,5 +1,7 @@
-lessThan(QT_MAJOR_VERSION, 5): error("You need at least Qt 5.9 to build Firebird!")
-equals(QT_MAJOR_VERSION, 5):lessThan(QT_MINOR_VERSION, 9): error("You need at least Qt 5.9 to build Firebird!")
+# Qt 6.2 is the minimum because the Android build uses it (it is the last
+# Qt version supporting Android 6-8). Desktop builds use newer versions.
+lessThan(QT_MAJOR_VERSION, 6): error("You need at least Qt 6.2 to build Firebird!")
+equals(QT_MAJOR_VERSION, 6):lessThan(QT_MINOR_VERSION, 2): error("You need at least Qt 6.2 to build Firebird!")
 
 # Version
 DEFINES += FB_VERSION=1.6
@@ -16,9 +18,9 @@ isEmpty(SUPPORT_LINUX) | equals(SUPPORT_LINUX, auto) {
 TRANSLATIONS += i18n/de_DE.ts i18n/fr_FR.ts i18n/pl_PL.ts \
                 i18n/zh_CN.ts i18n/zh_TW.ts i18n/yue_HK.ts
 
-QT += core gui widgets quickwidgets
-android: QT += androidextras
-CONFIG += c++11
+QT += core gui widgets quickwidgets quickcontrols2
+# Qt 6 requires C++17
+CONFIG += c++17
 
 TEMPLATE = app
 TARGET = firebird-emu
@@ -68,9 +70,8 @@ win32: {
 }
 
 macx: ICON = resources/logo.icns
-macx: QMAKE_LIBS_OPENGL = -framework OpenGL
-# MAP_JIT requires macOS 10.14. Qt 6 already requires a newer macOS version.
-macx:!ios:lessThan(QT_MAJOR_VERSION, 6): QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.14
+# MAP_JIT requires macOS 10.14. Qt 6 already requires a newer macOS version,
+# so the default deployment target of Qt is used.
 
 # This does also apply to android
 unix: SOURCES += core/os/os-linux.c
@@ -153,6 +154,9 @@ equals(SUPPORT_LINUX, true) {
 }
 
 ANDROID_PACKAGE_SOURCE_DIR = $$PWD/android
+# Qt 6.2 supports Android 6.0 (API 23) and newer.
+ANDROID_MIN_SDK_VERSION = 23
+ANDROID_TARGET_SDK_VERSION = 28
 
 QML_IMPORT_PATH += $$PWD/qml
 

@@ -1,7 +1,6 @@
-import QtQuick 2.7
-import QtQuick.Layouts 1.0
-import QtQuick.Controls 1.4
-import QtQuick.Controls.Styles 1.4
+import QtQuick
+import QtQuick.Layouts
+import QtQuick.Controls
 
 import Firebird.UIComponents 1.0
 
@@ -9,8 +8,12 @@ Item {
     Layout.fillHeight: true
     Layout.fillWidth: true
 
-    TabView {
-        id: tabView
+    ConfigPagesModel {
+        id: pagesModel
+    }
+
+    ColumnLayout {
+        id: tabLayout
         anchors {
             left: parent.left
             right: swipeBar.left
@@ -19,36 +22,34 @@ Item {
             bottomMargin: 2
         }
 
-        property var model: ConfigPagesModel {}
+        TabBar {
+            id: bar
+            Layout.fillWidth: true
 
-    /*    style: TabViewStyle {
-            tab: Rectangle {
-                color: styleData.selected ? "darkgrey" :"lightgrey"
+            Repeater {
+                model: pagesModel
 
-                implicitWidth: tabView.width / model.count
-                implicitHeight: title.contentHeight + 10
-
-                FBLabel {
-                    id: title
-                    anchors.fill: parent
-                    text: styleData.title
-                    font.pixelSize: TextMetrics.title1Size
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                    elide: Text.ElideRight
-                    color: styleData.selected ? "white" : "black"
+                TabButton {
+                    // "&" would be treated as a mnemonic, "&&" is a literal one
+                    text: qsTranslate("ConfigPagesModel", model.title).replace(/&/g, "&&")
+                    // Let the tab bar scroll if the tabs don't fit
+                    width: Math.max(implicitWidth, tabLayout.width / pagesModel.count)
                 }
             }
-            frame: Rectangle { color: "#eeeeee" }
-        }*/
+        }
 
-        Repeater {
-            id: rep
-            model: tabView.model
+        // Not a SwipeView: swipes would interfere with the controls on the pages.
+        StackLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            currentIndex: bar.currentIndex
 
-            Tab {
-                title: qsTranslate("ConfigPagesModel", rep.model.get(index).title)
-                source: file
+            Repeater {
+                model: pagesModel
+
+                Loader {
+                    source: model.file
+                }
             }
         }
     }

@@ -1,6 +1,6 @@
-import QtQuick 2.0
-import QtQuick.Controls 1.0
-import QtQuick.Layouts 1.0
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
 import Firebird.Emu 1.0
 import Firebird.UIComponents 1.0
 
@@ -9,14 +9,13 @@ ColumnLayout {
 
     FBLabel {
         text: qsTr("Startup")
-        font.pixelSize: TextMetrics.title2Size
+        font.pixelSize: FBTextMetrics.title2Size
         Layout.topMargin: 5
         Layout.bottomMargin: 5
     }
 
     FBLabel {
-        // The hell, QML!
-        Layout.maximumWidth: parent.width
+        Layout.fillWidth: true
         wrapMode: Text.WordWrap
         text: {
             if(!Emu.isMobile())
@@ -25,17 +24,16 @@ ColumnLayout {
                 return qsTr("Choose the Kit selected on startup and after restarting. If the checkbox is active, it will be launched when Firebird starts.")
         }
 
-        font.pixelSize: TextMetrics.normalSize
+        font.pixelSize: FBTextMetrics.normalSize
     }
 
     RowLayout {
         // No spacing so that the spin box looks like part of the label
         spacing: 0
-        width: parent.width
         Layout.fillWidth: true
 
         CheckBox {
-            Layout.maximumWidth: parent.parent.width - startupKit.width
+            Layout.fillWidth: true
             text: qsTr("On Startup, run Kit")
 
             checked: Emu.autostart
@@ -44,12 +42,12 @@ ColumnLayout {
 
         ComboBox {
             id: startupKit
-            Layout.maximumWidth: parent.parent.width * 0.4
+            Layout.maximumWidth: parent.width * 0.4
             textRole: "name"
             model: Emu.kits
             currentIndex: Emu.kitIndexForID(Emu.defaultKit)
             onCurrentIndexChanged: {
-                Emu.defaultKit = model.getDataRow(currentIndex, KitModel.IDRole);
+                Emu.defaultKit = Emu.kits.getDataRow(currentIndex, KitModel.IDRole);
                 currentIndex = Qt.binding(function() { return Emu.kitIndexForID(Emu.defaultKit); });
             }
         }
@@ -57,14 +55,14 @@ ColumnLayout {
 
     FBLabel {
         text: qsTr("Shutdown")
-        font.pixelSize: TextMetrics.title1Size
+        font.pixelSize: FBTextMetrics.title1Size
         Layout.topMargin: 10
         Layout.bottomMargin: 5
         visible: Qt.platform.os !== "ios"
     }
 
     FBLabel {
-        Layout.maximumWidth: parent.width
+        Layout.fillWidth: true
         wrapMode: Text.WordWrap
         text: {
             if(Qt.platform.os === "android")
@@ -72,7 +70,7 @@ ColumnLayout {
             else
                 return qsTr("On Application end, save the current state to the current snapshot.");
         }
-        font.pixelSize: TextMetrics.normalSize
+        font.pixelSize: FBTextMetrics.normalSize
         visible: Qt.platform.os !== "ios"
     }
 
@@ -89,17 +87,17 @@ ColumnLayout {
 
     FBLabel {
         text: qsTr("UI Preferences")
-        font.pixelSize: TextMetrics.title2Size
+        font.pixelSize: FBTextMetrics.title2Size
         Layout.topMargin: 10
         Layout.bottomMargin: 5
         visible: Emu.isMobile()
     }
 
     FBLabel {
-        Layout.maximumWidth: parent.width
+        Layout.fillWidth: true
         wrapMode: Text.WordWrap
         text: qsTr("Change the side of the keypad in landscape orientation.")
-        font.pixelSize: TextMetrics.normalSize
+        font.pixelSize: FBTextMetrics.normalSize
         visible: Emu.isMobile()
     }
 

@@ -1,5 +1,4 @@
-import QtQuick 2.0
-
+import QtQuick
 import Firebird.UIComponents 1.0
 
 Rectangle {
@@ -30,8 +29,8 @@ Rectangle {
 
         anchors.centerIn: parent
 
-        horizontalAlignment: Text.Center
-        font.pixelSize: TextMetrics.title1Size
+        horizontalAlignment: Text.AlignHCenter
+        font.pixelSize: FBTextMetrics.title1Size
         wrapMode: Text.WordWrap
 
         Timer {

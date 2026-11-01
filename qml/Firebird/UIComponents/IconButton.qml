@@ -1,23 +1,19 @@
-import QtQuick 2.0
-import QtQuick.Controls 1.0
+import QtQuick
+import QtQuick.Controls
 
 /* A push button with a symbol instead of text.
- * ToolButton and <img/> in Label don't size correctly,
- * so do it manually.
- * With QQC2, button icons have a better default size
- * and it can also be specified explicitly. */
+ * QQC2 buttons have a built-in "icon" group property, so the
+ * image is exposed as "iconSource" instead. */
 
 Button {
-    property alias icon: image.source
+    property url iconSource
 
-    implicitHeight: TextMetrics.normalSize * 2.5
+    readonly property int iconSize: Math.round(FBTextMetrics.normalSize * 1.5)
+
+    display: AbstractButton.IconOnly
+    icon.source: iconSource
+    icon.width: iconSize
+    icon.height: iconSize
+    // Keep the original look: a square button
     implicitWidth: implicitHeight
-
-    Image {
-        id: image
-        height: Math.round(parent.height * 0.6)
-        anchors.centerIn: parent
-
-        fillMode: Image.PreserveAspectFit
-    }
 }

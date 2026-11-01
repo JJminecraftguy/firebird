@@ -1,5 +1,5 @@
-import QtQuick 2.0
-import QtQuick.Controls 1.0
+import QtQuick
+import QtQuick.Controls
 import Firebird.Emu 1.0
 
 Rectangle {
@@ -17,18 +17,21 @@ Rectangle {
         width: 1
     }
 
-    ScrollView {
+    Item {
         anchors.margins: parent.border.width
         anchors.fill: parent
-
-        activeFocusOnTab: true
+        clip: true
 
         ListView {
             id: listView
 
-            anchors.centerIn: parent
             anchors.fill: parent
+            activeFocusOnTab: true
             focus: true
+            boundsBehavior: Flickable.StopAtBounds
+
+            ScrollBar.vertical: ScrollBar {}
+
             highlightMoveDuration: 50
             highlightResizeDuration: 0
 
@@ -41,7 +44,7 @@ Rectangle {
                 property variant myData: model
 
                 height: item.height + 10
-                width: listView.width - listView.anchors.margins
+                width: listView.width
 
                 MouseArea {
                     anchors.fill: parent
@@ -111,7 +114,7 @@ Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
                 color: paletteActive.window
                 height: label.implicitHeight + 4
-                width: listView.width - listView.anchors.margins
+                width: listView.width
 
                 FBLabel {
                     id: label

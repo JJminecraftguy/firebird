@@ -74,12 +74,7 @@ static void migrateSettings()
 
 int main(int argc, char **argv)
 {
-    #ifdef Q_OS_ANDROID
-        QGuiApplication::setAttribute(Qt::AA_DisableHighDpiScaling);
-    #else
-        QGuiApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-    #endif
-    QGuiApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+    // Qt 6 always enables High-DPI scaling and pixmaps, nothing to set up here.
 
     #ifdef MOBILE_UI
         QGuiApplication app(argc, argv);
@@ -104,8 +99,8 @@ int main(int argc, char **argv)
     QCoreApplication::setOrganizationName(QStringLiteral("Firebird Emus"));
     QCoreApplication::setApplicationName(QStringLiteral("firebird-emu"));
 
-    // Needed for settings migration
-    qRegisterMetaTypeStreamOperators<KitModel>();
+    // Needed for settings migration. In Qt 6 the QDataStream operators of KitModel
+    // are picked up automatically when the metatype is registered.
     qRegisterMetaType<KitModel>();
 
     migrateSettings();

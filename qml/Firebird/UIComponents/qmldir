@@ -5,7 +5,9 @@ ConfigPages 1.0 ConfigPages.qml
 KitList 1.0 KitList.qml
 FBLabel 1.0 FBLabel.qml
 FileSelect 1.0 FileSelect.qml
+IconButton 1.0 IconButton.qml
+KitItem 1.0 KitItem.qml
 FBLink 1.0 FBLink.qml
 Toast 1.0 Toast.qml
 VerticalSwipeBar 1.0 VerticalSwipeBar.qml
-singleton TextMetrics 1.0 TextMetrics.qml
+singleton FBTextMetrics 1.0 FBTextMetrics.qml

@@ -1,7 +1,6 @@
-import QtQuick 2.0
-import QtQuick.Dialogs 1.1
-import QtQuick.Layouts 1.0
-
+import QtQuick
+import QtQuick.Dialogs
+import QtQuick.Layouts
 import Firebird.Emu 1.0
 import Firebird.UIComponents 1.0
 
@@ -88,14 +87,12 @@ Rectangle {
                      id: saveFailedDialog
                      title: qsTr("Error")
                      text: qsTr("Failed to save changes!")
-                     icon: StandardIcon.Warning
                  }
 
                  MessageDialog {
                      id: snapWarnDialog
                      title: qsTr("Warning")
                      text: qsTr("Flash saved, but no snapshot location configured.\nYou won't be able to resume.")
-                     icon: StandardIcon.Warning
                  }
 
                  onClicked: {
@@ -154,7 +151,7 @@ Rectangle {
                 toggleState: Emu.turboMode
 
                 title: qsTr("Speed: %1 %").arg(Math.round(100*Emu.speed))
-                font.pixelSize: TextMetrics.normalSize
+                font.pixelSize: FBTextMetrics.normalSize
                 onToggleStateChanged: {
                     Emu.turboMode = toggleState
                     toggleState = Qt.binding(function() { return Emu.turboMode })
@@ -168,7 +165,7 @@ Rectangle {
 
                 title: qsTr("Firebird Emu v" + Emu.version)
 
-                font.pixelSize: TextMetrics.normalSize
+                font.pixelSize: FBTextMetrics.normalSize
 
                 MessageDialog {
                     id: aboutDialog

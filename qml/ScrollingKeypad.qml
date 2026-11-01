@@ -1,21 +1,20 @@
-import QtQuick 2.0
-import QtQuick.Controls 1.0
+import QtQuick
 
-ScrollView {
+// The keypad scaled to the available width. If that's taller than
+// the view, it can be scrolled vertically (without visible scroll bars).
+Flickable {
     id: controls
     property alias keypad: keypad
-    horizontalScrollBarPolicy: Qt.ScrollBarAlwaysOff
-    verticalScrollBarPolicy: Qt.ScrollBarAlwaysOff
 
-    Flickable {
-        flickableDirection: Flickable.VerticalFlick
+    clip: true
+    flickableDirection: Flickable.VerticalFlick
+    boundsBehavior: Flickable.StopAtBounds
 
-        contentWidth: parent.width
-        contentHeight: keypad.height*controls.width/keypad.width
+    contentWidth: width
+    contentHeight: keypad.height*controls.width/keypad.width
 
-        Keypad {
-            id: keypad
-            transform: Scale { origin.x: 0; origin.y: 0; xScale: controls.width/keypad.width; yScale: controls.width/keypad.width }
-        }
+    Keypad {
+        id: keypad
+        transform: Scale { origin.x: 0; origin.y: 0; xScale: controls.width/keypad.width; yScale: controls.width/keypad.width }
     }
 }
