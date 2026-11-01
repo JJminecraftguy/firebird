@@ -1,16 +1,34 @@
 name: Build for Android
 
-# Controls when the action will run. Triggers the workflow on push or pull request
-# events but only for the master branch
 on:
   push:
     branches: [ master ]
   pull_request:
     branches: [ master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    name: APK (${{ matrix.abi }})
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Qt 6.2 has no multi-ABI support with qmake (that arrived in 6.3, CMake
+        # only), so each ABI is a separate Qt install and a separate build.
+        include:
+          - abi: arm64-v8a
+            qt_arch: android_arm64_v8a
+          - abi: armeabi-v7a
+            qt_arch: android_armv7
 
     steps:
       - name: Checkout
@@ -18,44 +36,56 @@ jobs:
         with:
           submodules: 'recursive'
 
-      - name: Set up JDK 17
+      # Qt 6.2 requires JDK 11+; its Gradle 7.2 / AGP 7.0.2 do not support 17.
+      - name: Set up JDK 11
         uses: actions/setup-java@v5
         with:
-          java-version: 17
+          java-version: '11'
           distribution: temurin
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.04
 
+      # Qt 6.2 needs SDK platform + build-tools 31.
+      - name: Install SDK packages
+        run: |
+          sdkmanager --install \
+            "platforms;android-31" \
+            "build-tools;31.0.0" \
+            "platform-tools"
+
       - uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1
         id: setup-ndk
         with:
-          # Newer doesn't work with Qt 5.15: https://bugreports.qt.io/browse/QTBUG-104580
-          ndk-version: r21
+          # NDK required by Qt 6.2 is 23.1.7779620 (r23b).
+          ndk-version: r23b
           add-to-path: false
 
-      - name: Install Qt
-        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4
+      - name: Install Qt 6.2 (${{ matrix.abi }})
+        uses: jurplel/install-qt-action@v4
         with:
-          version: '5.15.2'
+          version: '6.2.4'
           host: 'linux'
           target: 'android'
-          arch: 'android'
+          arch: '${{ matrix.qt_arch }}'
           cache: true
 
-      - name: Build firebird
+      - name: Verify toolchain
+        run: |
+          qmake -v
+          echo "NDK: ${{ steps.setup-ndk.outputs.ndk-path }}"
+
+      - name: Build firebird (${{ matrix.abi }})
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           mkdir build
           cd build
-          qmake .. ANDROID_ABIS="arm64-v8a armeabi-v7a"
-          make -j4 apk_install_target
+          qmake ../firebird.pro CONFIG+=release
+          make -j"$(nproc)" apk_install_target
 
-      # "platforms;android-33" currently points to an "android-33-ext4" platform, but the "-ext4"
-      # suffix breaks androiddeployqt which uses the last component as "androidCompileSdkVersion".
-      # By using android-32 as platform this is worked around. It'll be installed automatically.
+      # androiddeployqt picks android-31 automatically: it is the only platform installed.
       - name: Pack APK
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
@@ -64,16 +94,26 @@ jobs:
           ANDROID_KEYSTORE_PWD: ${{ secrets.ANDROID_KEYSTORE_PWD }}
         run: |
           cd build
+          APK="$PWD/android-build/firebird-emu-${{ matrix.abi }}.apk"
           if [ -n "$ANDROID_KEYSTORE_PWD" ]; then
             echo "$ANDROID_KEYSTORE" | base64 -d > keystore.jks
-            androiddeployqt --android-platform android-32 --input android-firebird-emu-deployment-settings.json --output android-build --apk firebird-emu.apk --sign keystore.jks firebirdemugh --storepass "$ANDROID_KEYSTORE_PWD"
+            androiddeployqt \
+              --input android-firebird-emu-deployment-settings.json \
+              --output "$PWD/android-build" \
+              --apk "$APK" \
+              --sign keystore.jks firebirdemugh \
+              --storepass "$ANDROID_KEYSTORE_PWD"
           else
-            androiddeployqt --android-platform android-32 --input android-firebird-emu-deployment-settings.json --output android-build --apk firebird-emu.apk
+            androiddeployqt \
+              --input android-firebird-emu-deployment-settings.json \
+              --output "$PWD/android-build" \
+              --apk "$APK"
           fi
+          test -f "$APK"
 
-      - name: Upload zip
+      - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
-            name: firebird-emu-android
-            path: build/firebird-emu.apk
-            if-no-files-found: error
+          name: firebird-emu-android-${{ matrix.abi }}
+          path: build/android-build/firebird-emu-${{ matrix.abi }}.apk
+          if-no-files-found: error
