@@ -22,8 +22,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Qt 6.2 has no multi-ABI support with qmake (that arrived in 6.3, CMake
-        # only), so each ABI is a separate Qt install and a separate build.
         include:
           - abi: arm64-v8a
             qt_arch: android_arm64_v8a
@@ -36,7 +34,7 @@ jobs:
         with:
           submodules: 'recursive'
 
-      # --- JDK 11 first: this is what Qt 6.2's Gradle 7.2 / AGP 7.0.2 need.
+      # Qt 6.2's Gradle 7.2 / AGP 7.0.2 need JDK 11 for the actual build.
       - name: Set up JDK 11 (for the Qt 6.2 build)
         id: jdk11
         uses: actions/setup-java@v5
@@ -44,8 +42,7 @@ jobs:
           java-version: '11'
           distribution: temurin
 
-      # --- JDK 17 second: setup-android's sdkmanager (cmdline-tools 22.0)
-      #     refuses to run on anything older than 17.
+      # setup-android's sdkmanager (cmdline-tools 22.0) refuses to run on < 17.
       - name: Set up JDK 17 (for sdkmanager)
         uses: actions/setup-java@v5
         with:
@@ -55,7 +52,6 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.04
 
-      # Runs under JDK 17 (currently on PATH). Required by Qt 6.2.
       - name: Install SDK packages
         run: |
           sdkmanager --install \
@@ -66,7 +62,6 @@ jobs:
       - uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1
         id: setup-ndk
         with:
-          # NDK required by Qt 6.2 is 23.1.7779620 (r23b).
           ndk-version: r23b
           add-to-path: false
 
@@ -82,46 +77,69 @@ jobs:
       - name: Verify toolchain
         run: |
           qmake -v
-          echo "NDK:       ${{ steps.setup-ndk.outputs.ndk-path }}"
-          echo "Build JDK: ${{ steps.jdk11.outputs.java-home }}"
+          echo "NDK:        ${{ steps.setup-ndk.outputs.ndk-path }}"
+          echo "JDK 11 home: ${{ steps.jdk11.outputs.path }}"
+          echo "QT_ROOT_DIR: ${QT_ROOT_DIR:-unset}"
+          echo "libexec:    $(qmake -query QT_INSTALL_LIBEXECS)"
 
-      # --- Back to JDK 11 for the actual compile. Gradle honours JAVA_HOME,
-      #     and putting JDK 11's bin first on PATH also covers anything that
-      #     shells out to a bare `java`.
       - name: Build firebird (${{ matrix.abi }})
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
-          JAVA_HOME: ${{ steps.jdk11.outputs.java-home }}
+          JAVA_HOME: ${{ steps.jdk11.outputs.path }}
         run: |
-          echo "$JAVA_HOME/bin" >> "$GITHUB_PATH"
-          java -version
+          echo "Build JDK: ${JAVA_HOME:-<unset>}"
+          if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+            "$JAVA_HOME/bin/java" -version
+          else
+            echo "warning: JDK 11 not located, using default java for the compile"
+            java -version
+          fi
           mkdir build
           cd build
           qmake ../firebird.pro CONFIG+=release
           make -j"$(nproc)" apk_install_target
 
-      # androiddeployqt picks android-31 automatically: it is the only platform installed.
       - name: Pack APK
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
-          JAVA_HOME: ${{ steps.jdk11.outputs.java-home }}
+          JAVA_HOME: ${{ steps.jdk11.outputs.path }}
           ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
           ANDROID_KEYSTORE_PWD: ${{ secrets.ANDROID_KEYSTORE_PWD }}
         run: |
+          set -euo pipefail
           cd build
+
+          # Qt 6 moved androiddeployqt to libexec; install-qt-action only
+          # adds bin/ to PATH, so it must be invoked by absolute path.
+          ADQ="$(qmake -query QT_INSTALL_LIBEXECS)/androiddeployqt"
+          if [ ! -x "$ADQ" ]; then
+            echo "not found at $ADQ; searching ${QT_ROOT_DIR:-$PWD/..}/.." >&2
+            ADQ="$(find "${QT_ROOT_DIR:-$PWD/..}/.." -name androiddeployqt -type f -executable 2>/dev/null | head -n1)"
+          fi
+          if [ -z "$ADQ" ] || [ ! -x "$ADQ" ]; then
+            echo "error: androiddeployqt not found" >&2
+            exit 1
+          fi
+          echo "Using $ADQ"
+
+          if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+            echo "Using $JAVA_HOME/bin/java"
+            "$JAVA_HOME/bin/java" -version
+          fi
+
           APK="$PWD/android-build/firebird-emu-${{ matrix.abi }}.apk"
-          if [ -n "$ANDROID_KEYSTORE_PWD" ]; then
+          if [ -n "${ANDROID_KEYSTORE_PWD:-}" ]; then
             echo "$ANDROID_KEYSTORE" | base64 -d > keystore.jks
-            androiddeployqt \
+            "$ADQ" \
               --input android-firebird-emu-deployment-settings.json \
               --output "$PWD/android-build" \
               --apk "$APK" \
               --sign keystore.jks firebirdemugh \
               --storepass "$ANDROID_KEYSTORE_PWD"
           else
-            androiddeployqt \
+            "$ADQ" \
               --input android-firebird-emu-deployment-settings.json \
               --output "$PWD/android-build" \
               --apk "$APK"
