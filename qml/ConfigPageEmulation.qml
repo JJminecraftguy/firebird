@@ -42,7 +42,7 @@ ColumnLayout {
 
         ComboBox {
             id: startupKit
-            Layout.maximumWidth: parent.width * 0.4
+            Layout.maximumWidth: parent.parent.width * 0.4
             textRole: "name"
             model: Emu.kits
             currentIndex: Emu.kitIndexForID(Emu.defaultKit)

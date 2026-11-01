@@ -64,7 +64,7 @@ RowLayout {
     // if the open file dialog doesn't allow creation, to open a file creation dialog.
     Button {
         visible: showCreateButton || (!selectExisting && !Emu.saveDialogSupported())
-        iconSource: "qrc:/icons/resources/icons/document-new.png"
+        icon.source: "qrc:/icons/resources/icons/document-new.png"
 
         Loader {
             id: createDialogLoader
@@ -90,7 +90,7 @@ RowLayout {
     }
 
     Button {
-        iconSource: "qrc:/icons/resources/icons/document-edit.png"
+        icon.source: "qrc:/icons/resources/icons/document-edit.png"
         onClicked: {
             dialogLoader.active = true;
             dialogLoader.item.visible = true;
