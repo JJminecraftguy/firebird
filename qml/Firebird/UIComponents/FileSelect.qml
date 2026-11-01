@@ -64,7 +64,13 @@ RowLayout {
     // if the open file dialog doesn't allow creation, to open a file creation dialog.
     Button {
         visible: showCreateButton || (!selectExisting && !Emu.saveDialogSupported())
-        icon.source: "qrc:/icons/resources/icons/document-new.png"
+        contentItem: Image {
+            source: "qrc:/icons/resources/icons/document-new.png"
+            sourceSize.width: Math.round(FBTextMetrics.normalSize * 1.5)
+            sourceSize.height: Math.round(FBTextMetrics.normalSize * 1.5)
+            fillMode: Image.PreserveAspectFit
+            smooth: true
+        }
 
         Loader {
             id: createDialogLoader
@@ -90,7 +96,13 @@ RowLayout {
     }
 
     Button {
-        icon.source: "qrc:/icons/resources/icons/document-edit.png"
+        contentItem: Image {
+            source: "qrc:/icons/resources/icons/document-edit.png"
+            sourceSize.width: Math.round(FBTextMetrics.normalSize * 1.5)
+            sourceSize.height: Math.round(FBTextMetrics.normalSize * 1.5)
+            fillMode: Image.PreserveAspectFit
+            smooth: true
+        }
         onClicked: {
             dialogLoader.active = true;
             dialogLoader.item.visible = true;

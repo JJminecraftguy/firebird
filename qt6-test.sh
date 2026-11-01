@@ -1,96 +1,94 @@
 #!/usr/bin/env bash
-# fix-flash-boot1-tab.sh
+# fix-fileselect-icons.sh
 #
-# 1. FileSelect.qml: `iconSource:` on Button -> `icon.source:`  (root cause)
-# 2. FlashDialog.qml: ensure `import QtQuick.Window` (Window moved from
-#    QtQuick.Controls, which exported it, to QtQuick.Window in Qt 6)
-# 3. ConfigPageEmulation.qml: stop binding a ComboBox's Layout.maximumWidth
-#    to its own parent's width -> "Detected recursive rearrange"
+# Fix FileSelect.qml's two buttons rendering as solid white on Qt 6.12.
 #
-# Usage:  cd firebird && ./fix-flash-boot1-tab.sh [--rebuild]
+# Cause: the port replaced the Qt 5 `Image`-inside-`Button` pattern with
+# QQC2's `icon.source`, which is rendered by the active style. Under
+# Fusion, `icon.source` is tinted with palette.buttonText, so a light
+# palette turns every icon white.
+#
+# Fix: draw the PNG through `contentItem: Image`, which bypasses the
+# style's icon rendering entirely, as it did before the port.
+#
+#   ./fix-fileselect-icons.sh [path]          # apply
+#   ./fix-fileselect-icons.sh [path] --dry    # show what would change
 
 set -euo pipefail
 
-ROOT=""
-REBUILD=0
-for arg in "$@"; do
-    case "$arg" in
-        --rebuild) REBUILD=1 ;;
-        -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-        -*)        echo "unknown option: $arg" >&2; exit 2 ;;
-        *)         ROOT="$arg" ;;
-    esac
-done
-
-ROOT="${ROOT:-$PWD}"
-[ -f "$ROOT/firebird.pro" ] || { echo "error: $ROOT is not a firebird checkout" >&2; exit 2; }
+ROOT="${1:-$PWD}"
+DRY=0
+[ "${2:-}" = "--dry" ] && DRY=1
+[ -f "$ROOT/firebird.pro" ] || { echo "error: not a firebird checkout" >&2; exit 2; }
 ROOT="$(cd "$ROOT" && pwd)"
 
-python3 - "$ROOT" <<'PY'
-import os, sys
-root = sys.argv[1]
+FS="$ROOT/qml/Firebird/UIComponents/FileSelect.qml"
+[ -f "$FS" ] || { echo "error: $FS not found" >&2; exit 2; }
 
-# 1. FileSelect.qml -- Button has icon.source, not iconSource
-p = os.path.join(root, "qml/Firebird/UIComponents/FileSelect.qml")
-t = open(p).read()
-n = 0
-for name in ("document-new", "document-edit"):
-    old = f'iconSource: "qrc:/icons/resources/icons/{name}.png"'
-    new = f'icon.source: "qrc:/icons/resources/icons/{name}.png"'
-    if old in t:
-        t = t.replace(old, new); n += 1
-open(p, "w").write(t)
-print(f"[FileSelect.qml] iconSource -> icon.source: {n} replacement(s)")
+if [ "$DRY" = 1 ]; then
+    echo "would patch: $FS"
+else
+    cp "$FS" "$FS.bak.$(date +%Y%m%d-%H%M%S)"
+fi
 
-# 2. FlashDialog.qml -- Window lives in QtQuick.Window
-p = os.path.join(root, "qml/FlashDialog.qml")
-t = open(p).read()
-if "import QtQuick.Window" in t:
-    print("[FlashDialog.qml] already imports QtQuick.Window")
+FS="$FS" DRY="$DRY" python3 - <<'PY'
+import os, re, sys
+p   = os.environ["FS"]
+dry = os.environ["DRY"] == "1"
+t   = open(p).read()
+before = t
+
+def replace_icon(text, name):
+    """Turn a Button's `icon.source`/`iconSource` property into contentItem: Image."""
+    img = (
+        "        contentItem: Image {\n"
+        f'            source: "qrc:/icons/resources/icons/{name}.png"\n'
+        "            sourceSize.width: Math.round(FBTextMetrics.normalSize * 1.5)\n"
+        "            sourceSize.height: Math.round(FBTextMetrics.normalSize * 1.5)\n"
+        "            fillMode: Image.PreserveAspectFit\n"
+        "            smooth: true\n"
+        "        }\n"
+    )
+    for key in (f'        icon.source: "qrc:/icons/resources/icons/{name}.png"\n',
+                f'        iconSource:  "qrc:/icons/resources/icons/{name}.png"\n',
+                f'        iconSource: "qrc:/icons/resources/icons/{name}.png"\n'):
+        if key in text:
+            return text.replace(key, img), True
+    return text, False
+
+t, n1 = replace_icon(t, "document-new")
+t, n2 = replace_icon(t, "document-edit")
+print(f"document-new : {'patched' if n1 else 'already fixed / not found'}")
+print(f"document-edit: {'patched' if n2 else 'already fixed / not found'}")
+
+if t == before:
+    print("no changes needed", file=sys.stderr)
+    sys.exit(0)
+
+if dry:
+    print("\n--- would write ---")
+    print(t[t.find("    Button {", t.find("document-new")-200):][:600] if False else "(dry run, nothing written)")
 else:
-    lines = t.split("\n")
-    inserted = False
-    for i, line in enumerate(lines):
-        if line.strip() == "import QtQuick":
-            lines.insert(i + 1, "import QtQuick.Window"); inserted = True; break
-    if not inserted:
-        for i, line in enumerate(lines):
-            if line.startswith("import "):
-                lines.insert(i + 1, "import QtQuick.Window"); inserted = True; break
-    if not inserted:
-        lines.insert(0, "import QtQuick.Window")
-    open(p, "w").write("\n".join(lines))
-    print("[FlashDialog.qml] added import QtQuick.Window")
-
-# 3. ConfigPageEmulation.qml -- unbind Layout.maximumWidth from own parent width
-p = os.path.join(root, "qml/ConfigPageEmulation.qml")
-t = open(p).read(); before = t
-t = t.replace("Layout.maximumWidth: parent.width * 0.4",
-              "Layout.maximumWidth: parent.parent.width * 0.4")
-t = t.replace("Layout.maximumWidth: root.width * 0.4",
-              "Layout.maximumWidth: parent.parent.width * 0.4")
-if t != before:
     open(p, "w").write(t)
-    print("[ConfigPageEmulation.qml] anchored ComboBox width to outer ColumnLayout")
-else:
-    print("[ConfigPageEmulation.qml] no change needed")
-
-# verify
-p = os.path.join(root, "qml/Firebird/UIComponents/FileSelect.qml")
-left = open(p).read().count("iconSource:")
-if left:
-    print(f"[warn] {left} iconSource: still present in FileSelect.qml")
-else:
-    print("[FileSelect.qml] clean")
+    print(f"wrote: {p}")
 PY
 
-if [ "$REBUILD" = 1 ]; then
-    BUILD="$(dirname "$ROOT")/firebird-build"
-    echo
-    echo "== rebuilding in $BUILD =="
-    mkdir -p "$BUILD"; cd "$BUILD"
-    qmake6 "$ROOT/firebird.pro" CONFIG+=release
+cat <<'EOM'
+
+== next ==
+  Rebuild the binary (not the CI artifact — that has the old code):
+    cd firebird
+    mkdir -p build && cd build
+    qmake6 ../firebird.pro CONFIG+=release
     make -j"$(nproc)"
-    echo
-    echo "built: $BUILD/firebird-emu"
-fi
+    ./firebird-emu
+
+  Or commit and let CI rebuild.
+
+  If icons are STILL white after this, the fallback one-liner is to add
+    icon.color: "transparent"
+  to each Button that has icon.source — this disables the tint but still
+  uses the style's icon path. The contentItem: Image above is the more
+  reliable fix; the one-liner exists only in case something about the
+  layout changes unexpectedly.
+EOM
