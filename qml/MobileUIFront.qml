@@ -1,8 +1,9 @@
 import Firebird.Emu 1.0
 import Firebird.UIComponents 1.0
 
-import QtQuick
-import QtQuick.Layouts
+import QtQuick 2.0
+import QtQuick.Layouts 1.0
+
 GridLayout {
     id: mobileui
 
@@ -14,33 +15,52 @@ GridLayout {
     columnSpacing: 0
     rowSpacing: 0
 
+    // Height the keypad occupies when it fills the full width (portrait).
+    readonly property real _keypadHeight: keypad.height * width / keypad.width + iosmargin.height
+
+    // Remaining space for the emulator: width after the swipe bar,
+    // height after the keypad.
+    readonly property real _availWidth: width - swipeBar.implicitWidth
+    readonly property real _availHeight: height - _keypadHeight
+
+    // Fit a 4:3 screen into that box.
+    readonly property real _fitHeight: Math.min(_availWidth * 3 / 4, _availHeight)
+
+    // In landscape the keypad sits in its own column, so fitHeight is
+    // not used; the screen fills the row and is aspect-fitted inside.
+    readonly property bool _tablet: width > height
+
     VerticalSwipeBar {
         id: swipeBar
-        Layout.preferredHeight: screen.implicitHeight
+        Layout.preferredHeight: mobileui._fitHeight
+        Layout.maximumHeight: mobileui._fitHeight
 
         onClicked: listView.openDrawer()
     }
 
-    EmuScreen {
-        id: screen
-        // Fit 4:3 inside the available area, so it doesn't overflow when
-        // the container is wider than 4:3 (e.g. landscape on a 16:9 phone).
-        readonly property real _aspect: 320.0 / 240.0
-        readonly property real _availW: mobileui.width - swipeBar.implicitWidth
-        readonly property real _availH: mobileui.height
-        readonly property real _fitW: Math.min(_availW, _availH * _aspect)
-        implicitWidth: _fitW
-        implicitHeight: _fitW / _aspect
+    // Wrapper fills the column so the screen can be centred, while the
+    // screen itself is sized to fit without overflow.
+    Item {
+        id: screenWrapper
         Layout.fillWidth: true
-        Layout.maximumWidth: _fitW
+        Layout.fillHeight: mobileui._tablet
+        Layout.preferredHeight: mobileui._tablet ? -1 : mobileui._fitHeight
+        Layout.maximumHeight: mobileui._tablet ? Number.POSITIVE_INFINITY : mobileui._fitHeight
 
-        focus: true
+        EmuScreen {
+            id: screen
+            anchors.centerIn: parent
+            width: Math.min(parent.width, parent.height * 4 / 3)
+            height: width * 3 / 4
 
-        Timer {
-            interval: 35
-            running: true
-            repeat: true
-            onTriggered: screen.update()
+            focus: true
+
+            Timer {
+                interval: 35
+                running: true
+                repeat: true
+                onTriggered: screen.update()
+            }
         }
     }
 
@@ -110,13 +130,6 @@ GridLayout {
             Layout.maximumWidth: Layout.minimumWidth
             Layout.fillHeight: true
             Layout.columnSpan: 1
-        }
-
-        /* Screen centered on the remaining space on the left */
-        PropertyChanges {
-            target: screen
-            Layout.fillHeight: true
-            Layout.fillWidth: true
         }
     }]
 }

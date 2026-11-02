@@ -1,119 +1,150 @@
 #!/usr/bin/env bash
-# fix-mobile-lightmode.sh — run from the firebird repo root
+# fix-mobileui-front.sh — run from the firebird repo root
 set -euo pipefail
 ROOT="${1:-$PWD}"
 ROOT="$(cd "$ROOT" && pwd)"
 [ -f "$ROOT/firebird.pro" ] || { echo "not a firebird checkout" >&2; exit 2; }
 
-python3 - "$ROOT" <<'PY'
-import re, os, sys
-root = sys.argv[1]
-def read(p): return open(p, encoding="utf-8").read()
-def write(p, t): open(p, "w", encoding="utf-8").write(t)
+FILE="$ROOT/qml/MobileUIFront.qml"
+[ -f "$FILE" ] || { echo "missing $FILE" >&2; exit 2; }
+cp "$FILE" "$FILE.bak.$(date +%s)"
 
-# ── 1. main.cpp: force light palette on mobile ────────────────────────
-p = os.path.join(root, "main.cpp")
-t = read(p)
+cat > "$FILE" <<'QML'
+import Firebird.Emu 1.0
+import Firebird.UIComponents 1.0
 
-if "#include <QPalette>" not in t:
-    t = t.replace("#include <QTranslator>\n",
-                  "#include <QTranslator>\n#include <QPalette>\n", 1)
+import QtQuick 2.0
+import QtQuick.Layouts 1.0
 
-old = """    #ifdef MOBILE_UI
-        QGuiApplication app(argc, argv);
+GridLayout {
+    id: mobileui
 
-        QTranslator appTranslator;
-        loadAppTranslation(appTranslator, QLocale::system());
-        app.installTranslator(&appTranslator);
-"""
-new = """    #ifdef MOBILE_UI
-        // Force the Material style to light theme regardless of the
-        // system's night-mode setting. Must be set before QGuiApplication.
-        qputenv("QT_QUICK_CONTROLS_MATERIAL_THEME", "Light");
+    // For previewing just this component
+    width: 600
+    height: 800
 
-        QGuiApplication app(argc, argv);
+    columns: 2
+    columnSpacing: 0
+    rowSpacing: 0
 
-        // Override the palette too, so light colors are used even if the
-        // active style is Fusion rather than Material.
-        {
-            QPalette lightPalette;
-            lightPalette.setColor(QPalette::Window,          QColor(0xef, 0xef, 0xef));
-            lightPalette.setColor(QPalette::WindowText,      Qt::black);
-            lightPalette.setColor(QPalette::Base,            Qt::white);
-            lightPalette.setColor(QPalette::AlternateBase,   QColor(0xf7, 0xf7, 0xf7));
-            lightPalette.setColor(QPalette::Text,            Qt::black);
-            lightPalette.setColor(QPalette::Button,          QColor(0xef, 0xef, 0xef));
-            lightPalette.setColor(QPalette::ButtonText,      Qt::black);
-            lightPalette.setColor(QPalette::BrightText,      Qt::red);
-            lightPalette.setColor(QPalette::Highlight,       QColor(0x30, 0x8c, 0xc6));
-            lightPalette.setColor(QPalette::HighlightedText, Qt::white);
-            lightPalette.setColor(QPalette::Disabled, QPalette::Text,       QColor(0xa0, 0xa0, 0xa0));
-            lightPalette.setColor(QPalette::Disabled, QPalette::ButtonText, QColor(0xa0, 0xa0, 0xa0));
-            QGuiApplication::setPalette(lightPalette);
+    // Height the keypad occupies when it fills the full width (portrait).
+    readonly property real _keypadHeight: keypad.height * width / keypad.width + iosmargin.height
+
+    // Remaining space for the emulator: width after the swipe bar,
+    // height after the keypad.
+    readonly property real _availWidth: width - swipeBar.implicitWidth
+    readonly property real _availHeight: height - _keypadHeight
+
+    // Fit a 4:3 screen into that box.
+    readonly property real _fitHeight: Math.min(_availWidth * 3 / 4, _availHeight)
+
+    // In landscape the keypad sits in its own column, so fitHeight is
+    // not used; the screen fills the row and is aspect-fitted inside.
+    readonly property bool _tablet: width > height
+
+    VerticalSwipeBar {
+        id: swipeBar
+        Layout.preferredHeight: mobileui._fitHeight
+        Layout.maximumHeight: mobileui._fitHeight
+
+        onClicked: listView.openDrawer()
+    }
+
+    // Wrapper fills the column so the screen can be centred, while the
+    // screen itself is sized to fit without overflow.
+    Item {
+        id: screenWrapper
+        Layout.fillWidth: true
+        Layout.fillHeight: mobileui._tablet
+        Layout.preferredHeight: mobileui._tablet ? -1 : mobileui._fitHeight
+        Layout.maximumHeight: mobileui._tablet ? Number.POSITIVE_INFINITY : mobileui._fitHeight
+
+        EmuScreen {
+            id: screen
+            anchors.centerIn: parent
+            width: Math.min(parent.width, parent.height * 4 / 3)
+            height: width * 3 / 4
+
+            focus: true
+
+            Timer {
+                interval: 35
+                running: true
+                repeat: true
+                onTriggered: screen.update()
+            }
+        }
+    }
+
+    Flickable {
+        id: controls
+
+        Layout.fillHeight: true
+        Layout.fillWidth: true
+        Layout.preferredHeight: contentHeight
+        Layout.maximumHeight: contentHeight
+        Layout.columnSpan: 2
+
+        boundsBehavior: Flickable.StopAtBounds
+        flickableDirection: Flickable.VerticalFlick
+
+        contentWidth: parent.width
+        contentHeight: keypad.height*controls.width/keypad.width + iosmargin.height
+        clip: true
+        pixelAligned: true
+
+        Keypad {
+            id: keypad
+            transform: Scale { origin.x: 0; origin.y: 0; xScale: controls.width/keypad.width; yScale: controls.width/keypad.width }
         }
 
-        QTranslator appTranslator;
-        loadAppTranslation(appTranslator, QLocale::system());
-        app.installTranslator(&appTranslator);
-"""
-if old in t:
-    t = t.replace(old, new, 1)
-    write(p, t)
-    print("[main.cpp] light palette forced on mobile")
-else:
-    print("[main.cpp] pattern not found — check manually")
+        Rectangle {
+            id: iosmargin
+            color: keypad.color
 
-# ── 2. Undo the Emu.isMobile() forcing from the previous patch ────────
-# The previous fix forced white text on all mobile; with a forced light
-# palette that would produce white-on-white. Strip the forcing so the
-# adaptive check does the right thing in both cases.
-for rel in ["qml/Firebird/UIComponents/FileSelect.qml",
-            "qml/ConfigPageKits.qml",
-            "qml/Firebird/UIComponents/KitItem.qml",
-            "qml/FlashDialog.qml"]:
-    p = os.path.join(root, rel)
-    if not os.path.exists(p):
-        print(f"[{rel}] not found, skipping")
-        continue
-    t = read(p)
-    t2 = t.replace(
-        "(Emu.isMobile() || paletteActive.window.hslLightness < 0.5)",
-        "(paletteActive.window.hslLightness < 0.5)")
-    if t2 != t:
-        write(p, t2)
-        print(f"[{rel}] reverted Emu.isMobile() forcing")
-    else:
-        print(f"[{rel}] no changes (not previously patched)")
+            anchors {
+                left: parent.left
+                right: parent.right
+                bottom: parent.bottom
+            }
 
-# ── 3. MobileUIFront.qml: cap EmuScreen width to fit within height ────
-p = os.path.join(root, "qml/MobileUIFront.qml")
-t = read(p)
+            // This is needed to avoid opening the control center
+            height: Qt.platform.os === "ios" ? 20 : 0
+        }
+    }
 
-old = """    EmuScreen {
-        id: screen
-        implicitHeight: (mobileui.width - swipeBar.implicitWidth) / 320 * 240
+    Rectangle {
+        Layout.fillHeight: true
         Layout.fillWidth: true
-"""
-new = """    EmuScreen {
-        id: screen
-        // Fit 4:3 inside the available area, so it doesn't overflow when
-        // the container is wider than 4:3 (e.g. landscape on a 16:9 phone).
-        readonly property real _aspect: 320.0 / 240.0
-        readonly property real _availW: mobileui.width - swipeBar.implicitWidth
-        readonly property real _availH: mobileui.height
-        readonly property real _fitW: Math.min(_availW, _availH * _aspect)
-        implicitWidth: _fitW
-        implicitHeight: _fitW / _aspect
-        Layout.fillWidth: true
-        Layout.maximumWidth: _fitW
-"""
-if old in t:
-    t = t.replace(old, new, 1)
-    write(p, t)
-    print("[MobileUIFront.qml] EmuScreen aspect-fit applied")
-else:
-    print("[MobileUIFront.qml] pattern not found — the file changed since last paste")
-PY
+        Layout.columnSpan: 2
+        color: keypad.color
+    }
 
-echo
-echo "=== DONE ==="
+    states: [ State {
+        name: "tabletMode"
+        when: mobileui.width > mobileui.height
+
+        PropertyChanges {
+            target: mobileui
+            columns: 3
+            layoutDirection: Emu.leftHanded ? Qt.RightToLeft : Qt.LeftToRight
+        }
+
+        PropertyChanges {
+            target: swipeBar
+            visible: false
+        }
+
+        /* Keypad fills right side, as wide as needed */
+        PropertyChanges {
+            target: controls
+            Layout.minimumWidth: Math.floor(keypad.width/keypad.height * (mobileui.height - iosmargin.height))
+            Layout.maximumWidth: Layout.minimumWidth
+            Layout.fillHeight: true
+            Layout.columnSpan: 1
+        }
+    }]
+}
+QML
+
+echo "Rewritten: $FILE"
