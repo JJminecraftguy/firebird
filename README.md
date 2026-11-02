@@ -27,7 +27,7 @@ _macOS:_ | _iOS:_
 Building
 --------
 
-First, you need to install Qt5.  
+First, you need to install Qt 6 (at least 6.3, the CI uses 6.12 for the desktop builds).  
 Then, you can either use Qt Creator directly (don't forget to configure your kits/compilers etc.!), or run:
 
 ```
@@ -36,6 +36,17 @@ cd build
 qmake ..
 make
 ```
+
+##### Notes for the different platforms
+
+* **macOS**: The Qt kits are universal, but the JIT is specific to the CPU architecture, so Firebird is built for
+  one architecture at a time. By default that's the one of your Mac, pass `QMAKE_APPLE_DEVICE_ARCHS=x86_64` (or `arm64`)
+  to `qmake` to build for the other one.
+* **Windows 64-bit**: Use the Qt 6 MinGW kit.
+* **Windows 32-bit**: Qt doesn't offer binaries for it. The CI uses a Qt built with MSYS2's `MINGW32` toolchain
+  (`qt/qt-6.10.3-win32.zip`), you have to use the same toolchain for building Firebird.
+* **Android**: Qt 6.12 supports Android 9 and newer (see the `android` workflow), the legacy workflow uses older
+  versions of Qt 6 to also support Android 6 to 8.
 ##### A special case: iOS with translation (≈JIT) enabled:
 
 There seems to be a bug in qmake that makes the required .S get ignored when building a JIT-enabled ([`TRANSLATION_ENABLED = true`](https://github.com/nspire-emus/firebird/blob/master/firebird.pro#L4)) binary.  

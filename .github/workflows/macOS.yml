@@ -10,12 +10,15 @@ on:
 
 jobs:
   build:
-    name: "Build: ${{ matrix.os }}"
-    runs-on: ${{ matrix.os }}
+    name: "Build: ${{ matrix.arch }}"
+    runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [macOS-latest]
+        # The JIT is specific to the architecture, so each one is built
+        # separately. The Qt 6 kit for macOS is universal, so the x86_64
+        # build is simply cross-compiled on the (Apple Silicon) runner.
+        arch: [arm64, x86_64]
 
     steps:
     - name: Checkout Git Repo
@@ -23,23 +26,36 @@ jobs:
       with:
         submodules: 'recursive'
 
-    - name: Install Qt
-      uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4
+    - name: Install Qt 6.12.0
+      uses: jurplel/install-qt-action@v4
       with:
+          version: '6.12.0'
+          host: mac
           target: desktop
-          version: '5.15.2'
-          # Broken: https://github.com/jurplel/install-qt-action/issues/239
-          # setup-python: false
+          arch: clang_64
+          cache: true
 
     - name: Build firebird-emu Qt on macOS
       run: |
         set -e
+        qmake -v
         mkdir build
         cd build
-        qmake .. && make -j4
+        qmake ../firebird.pro CONFIG+=release QMAKE_APPLE_DEVICE_ARCHS=${{ matrix.arch }}
+        make -j"$(sysctl -n hw.ncpu)"
+
+        # Make sure the JIT matches the architecture the binary was built for
+        lipo -archs firebird-emu.app/Contents/MacOS/firebird-emu | tee /dev/stderr | grep -qx "${{ matrix.arch }}"
+
         macdeployqt firebird-emu.app -qmldir=../qml
         mkdir -p /tmp/firebird-emu_macOS/
         mv firebird-emu.app /tmp/firebird-emu_macOS/
+
+        # macdeployqt changes the binaries, which invalidates their signatures. Apple Silicon
+        # refuses to run unsigned code, so sign ad-hoc. This is replaced by the real
+        # signature in the next step if the signing secrets are available.
+        codesign --force --deep --sign - /tmp/firebird-emu_macOS/firebird-emu.app
+        codesign --verify --deep --strict /tmp/firebird-emu_macOS/firebird-emu.app
 
     - name: "Codesign firebird-emu.app"
       shell: bash
@@ -71,13 +87,13 @@ jobs:
           brew install create-dmg || brew install create-dmg; # we try twice because sometimes it fails...
           # The codesign variable may be empty (for forks) but that's fine, create-dmg only does code-signing if it's not empty.
           createDmgArgs="--codesign '${{ secrets.MACOS_CODESIGN_IDENT }}' \
-              --volname 'firebird-emu_macOS' \
+              --volname 'firebird-emu_macOS_${{ matrix.arch }}' \
               --window-pos 200 120 \
               --window-size 600 400 \
               --icon-size 64 \
               --icon 'firebird-emu.app' 125 200 \
               --app-drop-link 400 200 \
-              'firebird-emu_macOS.dmg' \
+              'firebird-emu_macOS_${{ matrix.arch }}.dmg' \
               '/tmp/firebird-emu_macOS/'"
           eval "create-dmg $createDmgArgs" || eval "create-dmg $createDmgArgs" # We also retry just in case...
 
@@ -90,11 +106,11 @@ jobs:
       if: ${{ runner.os == 'macOS' && github.repository == 'nspire-emus/firebird' && env.HAVE_SECRETS == 'true' }}
       run: |
         xcrun notarytool store-credentials "notarytool-profile" --apple-id "$APPLE_NOTARIZATION_USERNAME" --team-id "$APPLE_NOTARIZATION_TEAMID" --password "$APPLE_NOTARIZATION_PASSWORD"
-        xcrun notarytool submit "firebird-emu_macOS.dmg" --keychain-profile "notarytool-profile" --wait
-        xcrun stapler staple "firebird-emu_macOS.dmg"
+        xcrun notarytool submit "firebird-emu_macOS_${{ matrix.arch }}.dmg" --keychain-profile "notarytool-profile" --wait
+        xcrun stapler staple "firebird-emu_macOS_${{ matrix.arch }}.dmg"
 
     - name: "Upload DMG"
       uses: actions/upload-artifact@v7
       with:
-          name: firebird-emu_macOS
-          path: firebird-emu_macOS.dmg
+          name: firebird-emu_macOS_${{ matrix.arch }}
+          path: firebird-emu_macOS_${{ matrix.arch }}.dmg

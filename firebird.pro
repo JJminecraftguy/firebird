@@ -73,6 +73,15 @@ macx: ICON = resources/logo.icns
 # MAP_JIT requires macOS 10.14. Qt 6 already requires a newer macOS version,
 # so the default deployment target of Qt is used.
 
+macos {
+    # The Qt 6 kits for macOS are universal (x86_64 and arm64), so qmake would
+    # build for both by default. The JIT is specific to one architecture though,
+    # so build for exactly one. By default that's the host architecture, use
+    # qmake QMAKE_APPLE_DEVICE_ARCHS=x86_64 (or arm64) to cross-build.
+    isEmpty(QMAKE_APPLE_DEVICE_ARCHS): QMAKE_APPLE_DEVICE_ARCHS = $$QMAKE_HOST.arch
+    !count(QMAKE_APPLE_DEVICE_ARCHS, 1): error("Firebird can only be built for one macOS architecture at a time, not for: $$QMAKE_APPLE_DEVICE_ARCHS")
+}
+
 # This does also apply to android
 unix: SOURCES += core/os/os-linux.c
 
@@ -98,6 +107,9 @@ ios {
 
 # QMAKE_HOST can be e.g. armv7hl, but QT_ARCH would be arm in such cases
 FB_ARCH = $$QT_ARCH
+
+# QT_ARCH is not reliable with universal Qt kits, use the selected architecture
+macos: FB_ARCH = $$QMAKE_APPLE_DEVICE_ARCHS
 
 # arm64, arm64-v8a
 contains(FB_ARCH, "arm64.*") {
