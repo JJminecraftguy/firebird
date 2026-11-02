@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build:
-    name: android9plus · ${{ matrix.abi }}
+    name: build · ${{ matrix.abi }}
     runs-on: ubuntu-24.04
 
     strategy:
