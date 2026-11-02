@@ -1,28 +1,30 @@
-name: Test Android Qt 6.12
+name: Build for Android
 
 on:
+  push:
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: android-qt611-test-${{ github.ref }}
+  group: android-modern-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: ${{ matrix.abi }} · Qt 6.12.0 · API 28+
+    name: android9plus · ${{ matrix.abi }}
     runs-on: ubuntu-24.04
 
     strategy:
       fail-fast: false
       matrix:
         include:
-          - abi: arm64-v8a
-            qt_arch: android_arm64_v8a
-          - abi: armeabi-v7a
-            qt_arch: android_armv7
+          - qt_arch: 'android_arm64_v8a'
+            abi: 'arm64-v8a'
+          - qt_arch: 'android_armv7'
+            abi: 'armeabi-v7a'
 
     steps:
       - name: Checkout
@@ -39,7 +41,7 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.04
 
-      - name: Install SDK platform and build tools
+      - name: Install SDK packages
         run: |
           sdkmanager --install \
             "platforms;android-36" \
@@ -52,7 +54,7 @@ jobs:
           ndk-version: r27c
           add-to-path: false
 
-      - name: Install Qt 6.12.0 (${{ matrix.abi }})
+      - name: Install Qt 6.12.0
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.12.0'
@@ -60,28 +62,6 @@ jobs:
           target: 'android'
           arch: '${{ matrix.qt_arch }}'
           cache: true
-
-      - name: Pin Gradle wrapper to 9.5.1
-        run: |
-          mkdir -p android/gradle/wrapper
-          cat > android/gradle/wrapper/gradle-wrapper.properties <<'EOF'
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-9.5.1-bin.zip
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          EOF
-
-      - name: Verify toolchain
-        run: |
-          qmake -v
-          echo "NDK:  ${{ steps.setup-ndk.outputs.ndk-path }}"
-          echo "JDK:  $(java -version 2>&1 | head -1)"
-          ADQ="$(qmake -query QT_INSTALL_BINS)/androiddeployqt"
-          [ -x "$ADQ" ] || ADQ="$(qmake -query QT_HOST_BINS 2>/dev/null)/androiddeployqt"
-          [ -x "$ADQ" ] || ADQ="$(find "${QT_ROOT_DIR:-$PWD/..}/.." -name androiddeployqt -type f -executable 2>/dev/null | head -n1)"
-          echo "androiddeployqt: $ADQ"
-          [ -x "$ADQ" ] || { echo "error: androiddeployqt not found" >&2; exit 1; }
 
       - name: Build firebird (${{ matrix.abi }})
         env:
@@ -92,7 +72,7 @@ jobs:
           qmake ../firebird.pro CONFIG+=release \
             ANDROID_MIN_SDK_VERSION=28 \
             ANDROID_TARGET_SDK_VERSION=36
-          make -j"$(nproc)" 2>&1 | tail -40
+          make -j"$(nproc)"
 
       - name: Install native library
         env:
@@ -139,6 +119,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v7
         with:
-          name: firebird-emu-qt612-${{ matrix.abi }}
+          name: firebird-emu-android9plus-${{ matrix.abi }}
           path: build/android-build/firebird-emu-${{ matrix.abi }}.apk
           if-no-files-found: error
