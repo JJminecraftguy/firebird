@@ -1,150 +1,125 @@
 #!/usr/bin/env bash
-# fix-mobileui-front.sh — run from the firebird repo root
+# fix-qtframebuffer-scaling.sh — run from the firebird repo root
 set -euo pipefail
 ROOT="${1:-$PWD}"
 ROOT="$(cd "$ROOT" && pwd)"
-[ -f "$ROOT/firebird.pro" ] || { echo "not a firebird checkout" >&2; exit 2; }
-
-FILE="$ROOT/qml/MobileUIFront.qml"
+FILE="$ROOT/qtframebuffer.cpp"
 [ -f "$FILE" ] || { echo "missing $FILE" >&2; exit 2; }
 cp "$FILE" "$FILE.bak.$(date +%s)"
 
-cat > "$FILE" <<'QML'
-import Firebird.Emu 1.0
-import Firebird.UIComponents 1.0
+python3 - "$FILE" <<'PY'
+import sys
+p = sys.argv[1]
+with open(p) as f:
+    t = f.read()
 
-import QtQuick 2.0
-import QtQuick.Layouts 1.0
+# Refactor: extract the drawing into paintFramebufferInto(p, target, dpr)
+# so both the widget path and the QML path can share it with the right rect.
+old_widget = '''void paintFramebuffer(QPainter *p)
+{
+#ifdef IS_IOS_BUILD
+    // Apparently, this is needed (will be 2 on retina screens)
+    // TODO: actually make sure Android doesn't need that as well
+    static const double devicePixelRatio = ((QGuiApplication*)QCoreApplication::instance())->primaryScreen()->devicePixelRatio();
+#else
+    // Has to be 1 on desktop, even on retina (tested on OS X 10.11 with one retina, one non-retina, and both ; same on Win VM)
+    static const double devicePixelRatio = 1;
+#endif
 
-GridLayout {
-    id: mobileui
+    QRect painterWindowScaled(p->window().topLeft(), p->window().size() / devicePixelRatio);
 
-    // For previewing just this component
-    width: 600
-    height: 800
-
-    columns: 2
-    columnSpacing: 0
-    rowSpacing: 0
-
-    // Height the keypad occupies when it fills the full width (portrait).
-    readonly property real _keypadHeight: keypad.height * width / keypad.width + iosmargin.height
-
-    // Remaining space for the emulator: width after the swipe bar,
-    // height after the keypad.
-    readonly property real _availWidth: width - swipeBar.implicitWidth
-    readonly property real _availHeight: height - _keypadHeight
-
-    // Fit a 4:3 screen into that box.
-    readonly property real _fitHeight: Math.min(_availWidth * 3 / 4, _availHeight)
-
-    // In landscape the keypad sits in its own column, so fitHeight is
-    // not used; the screen fills the row and is aspect-fitted inside.
-    readonly property bool _tablet: width > height
-
-    VerticalSwipeBar {
-        id: swipeBar
-        Layout.preferredHeight: mobileui._fitHeight
-        Layout.maximumHeight: mobileui._fitHeight
-
-        onClicked: listView.openDrawer()
+    if(hdq1w.lcd_contrast == 0)
+    {
+        p->fillRect(painterWindowScaled, emulate_cx ? Qt::black : Qt::white);
+        p->setPen(emulate_cx ? Qt::white : Qt::black);
+        p->drawText(painterWindowScaled, Qt::AlignCenter, QObject::tr("LCD turned off"));
+    }
+    else
+    {
+        QImage image = renderFramebuffer().scaled(p->window().size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        image.setDevicePixelRatio(devicePixelRatio);
+        p->drawImage((p->window().width() - image.width()) / 2, (p->window().height() - image.height()) / 2, image);
     }
 
-    // Wrapper fills the column so the screen can be centred, while the
-    // screen itself is sized to fit without overflow.
-    Item {
-        id: screenWrapper
-        Layout.fillWidth: true
-        Layout.fillHeight: mobileui._tablet
-        Layout.preferredHeight: mobileui._tablet ? -1 : mobileui._fitHeight
-        Layout.maximumHeight: mobileui._tablet ? Number.POSITIVE_INFINITY : mobileui._fitHeight
+    if(in_debugger)
+    {
+        p->setCompositionMode(QPainter::CompositionMode_SourceOver);
+        p->fillRect(painterWindowScaled, QColor(30, 30, 30, 150));
+        p->setPen(Qt::white);
+        p->drawText(painterWindowScaled, Qt::AlignCenter, QObject::tr("In debugger"));
+    }
+}'''
 
-        EmuScreen {
-            id: screen
-            anchors.centerIn: parent
-            width: Math.min(parent.width, parent.height * 4 / 3)
-            height: width * 3 / 4
-
-            focus: true
-
-            Timer {
-                interval: 35
-                running: true
-                repeat: true
-                onTriggered: screen.update()
-            }
-        }
+new_widget = '''static void paintFramebufferInto(QPainter *p, const QRect &target, double imageDpr)
+{
+    if(hdq1w.lcd_contrast == 0)
+    {
+        p->fillRect(target, emulate_cx ? Qt::black : Qt::white);
+        p->setPen(emulate_cx ? Qt::white : Qt::black);
+        p->drawText(target, Qt::AlignCenter, QObject::tr("LCD turned off"));
+    }
+    else
+    {
+        QImage image = renderFramebuffer().scaled(target.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        image.setDevicePixelRatio(imageDpr);
+        p->drawImage(target.x() + (target.width() - image.width()) / 2,
+                     target.y() + (target.height() - image.height()) / 2,
+                     image);
     }
 
-    Flickable {
-        id: controls
-
-        Layout.fillHeight: true
-        Layout.fillWidth: true
-        Layout.preferredHeight: contentHeight
-        Layout.maximumHeight: contentHeight
-        Layout.columnSpan: 2
-
-        boundsBehavior: Flickable.StopAtBounds
-        flickableDirection: Flickable.VerticalFlick
-
-        contentWidth: parent.width
-        contentHeight: keypad.height*controls.width/keypad.width + iosmargin.height
-        clip: true
-        pixelAligned: true
-
-        Keypad {
-            id: keypad
-            transform: Scale { origin.x: 0; origin.y: 0; xScale: controls.width/keypad.width; yScale: controls.width/keypad.width }
-        }
-
-        Rectangle {
-            id: iosmargin
-            color: keypad.color
-
-            anchors {
-                left: parent.left
-                right: parent.right
-                bottom: parent.bottom
-            }
-
-            // This is needed to avoid opening the control center
-            height: Qt.platform.os === "ios" ? 20 : 0
-        }
+    if(in_debugger)
+    {
+        p->setCompositionMode(QPainter::CompositionMode_SourceOver);
+        p->fillRect(target, QColor(30, 30, 30, 150));
+        p->setPen(Qt::white);
+        p->drawText(target, Qt::AlignCenter, QObject::tr("In debugger"));
     }
-
-    Rectangle {
-        Layout.fillHeight: true
-        Layout.fillWidth: true
-        Layout.columnSpan: 2
-        color: keypad.color
-    }
-
-    states: [ State {
-        name: "tabletMode"
-        when: mobileui.width > mobileui.height
-
-        PropertyChanges {
-            target: mobileui
-            columns: 3
-            layoutDirection: Emu.leftHanded ? Qt.RightToLeft : Qt.LeftToRight
-        }
-
-        PropertyChanges {
-            target: swipeBar
-            visible: false
-        }
-
-        /* Keypad fills right side, as wide as needed */
-        PropertyChanges {
-            target: controls
-            Layout.minimumWidth: Math.floor(keypad.width/keypad.height * (mobileui.height - iosmargin.height))
-            Layout.maximumWidth: Layout.minimumWidth
-            Layout.fillHeight: true
-            Layout.columnSpan: 1
-        }
-    }]
 }
-QML
 
-echo "Rewritten: $FILE"
+void paintFramebuffer(QPainter *p)
+{
+#ifdef IS_IOS_BUILD
+    // Apparently, this is needed (will be 2 on retina screens)
+    // TODO: actually make sure Android doesn't need that as well
+    static const double devicePixelRatio = ((QGuiApplication*)QCoreApplication::instance())->primaryScreen()->devicePixelRatio();
+#else
+    // Has to be 1 on desktop, even on retina (tested on OS X 10.11 with one retina, one non-retina, and both ; same on Win VM)
+    static const double devicePixelRatio = 1;
+#endif
+
+    QRect painterWindowScaled(p->window().topLeft(), p->window().size() / devicePixelRatio);
+    paintFramebufferInto(p, painterWindowScaled, devicePixelRatio);
+}'''
+
+if old_widget not in t:
+    print("ERROR: paintFramebuffer block not found verbatim", file=sys.stderr)
+    sys.exit(1)
+t = t.replace(old_widget, new_widget, 1)
+
+old_qml = '''void QMLFramebuffer::paint(QPainter *p)
+{
+    paintFramebuffer(p);
+}'''
+
+new_qml = '''void QMLFramebuffer::paint(QPainter *p)
+{
+    // Use the item's own bounds, not the top-level window. The painter is
+    // already set up so (0,0) is the item's top-left. dpr = 1 because the
+    // QQuickPaintedItem painter is already scaled by the scene graph; the
+    // image should be laid out in item-local logical pixels.
+    const QRect target(0, 0, int(width()), int(height()));
+    paintFramebufferInto(p, target, 1.0);
+}'''
+
+if old_qml not in t:
+    print("ERROR: QMLFramebuffer::paint not found verbatim", file=sys.stderr)
+    sys.exit(1)
+t = t.replace(old_qml, new_qml, 1)
+
+with open(p, "w") as f:
+    f.write(t)
+print("Patched:", p)
+PY
+
+echo
+echo "=== DONE ==="
