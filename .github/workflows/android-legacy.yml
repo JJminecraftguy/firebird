@@ -1,0 +1,241 @@
+name: Build for Android (legacy)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-legacy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.label }} · ${{ matrix.abi }}
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ── Qt 6.4.3 — Android 6.0+ (API 23) ──
+          - qt_version: '6.4.3'
+            qt_host: 'linux'
+            qt_arch: 'android_arm64_v8a'
+            abi: 'arm64-v8a'
+            min_sdk: 23
+            target_sdk: 31
+            ndk: 'r23b'
+            gradle: '7.4.2'
+            jdk: '17'
+            sdk_platform: 'android-31'
+            build_tools: '31.0.0'
+            deploy_platform: 'android-31'
+            label: 'android6-7'
+
+          - qt_version: '6.4.3'
+            qt_host: 'linux'
+            qt_arch: 'android_armv7'
+            abi: 'armeabi-v7a'
+            min_sdk: 23
+            target_sdk: 31
+            ndk: 'r23b'
+            gradle: '7.4.2'
+            jdk: '17'
+            sdk_platform: 'android-31'
+            build_tools: '31.0.0'
+            deploy_platform: 'android-31'
+            label: 'android6-7'
+
+          # ── Qt 6.7.3 — Android 8.0+ (API 26) ──
+          - qt_version: '6.7.3'
+            qt_host: 'all_os'
+            qt_arch: 'android_arm64_v8a'
+            abi: 'arm64-v8a'
+            min_sdk: 26
+            target_sdk: 34
+            ndk: 'r26b'
+            gradle: '8.3'
+            jdk: '17'
+            sdk_platform: 'android-34'
+            build_tools: '34.0.0'
+            deploy_platform: 'android-34'
+            label: 'android8'
+
+          - qt_version: '6.7.3'
+            qt_host: 'all_os'
+            qt_arch: 'android_armv7'
+            abi: 'armeabi-v7a'
+            min_sdk: 26
+            target_sdk: 34
+            ndk: 'r26b'
+            gradle: '8.3'
+            jdk: '17'
+            sdk_platform: 'android-34'
+            build_tools: '34.0.0'
+            deploy_platform: 'android-34'
+            label: 'android8'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: 'recursive'
+
+      - name: Set up JDK ${{ matrix.jdk }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: '${{ matrix.jdk }}'
+          distribution: temurin
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.04
+
+      - name: Install SDK packages
+        run: |
+          sdkmanager --install \
+            "platforms;${{ matrix.sdk_platform }}" \
+            "build-tools;${{ matrix.build_tools }}" \
+            "platform-tools"
+
+      - uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1
+        id: setup-ndk
+        with:
+          ndk-version: ${{ matrix.ndk }}
+          add-to-path: false
+
+      - name: Install Qt ${{ matrix.qt_version }}
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '${{ matrix.qt_version }}'
+          host: '${{ matrix.qt_host }}'
+          target: 'android'
+          arch: '${{ matrix.qt_arch }}'
+          cache: true
+
+      - name: Adapt Gradle wrapper and manifest for ${{ matrix.label }}
+        run: |
+          sed -i "s|gradle-9.5.1|gradle-${{ matrix.gradle }}|" \
+            android/gradle/wrapper/gradle-wrapper.properties
+          sed -i 's/android:extractNativeLibs="false"/android:extractNativeLibs="true"/' \
+            android/AndroidManifest.xml
+
+          echo "--- gradle wrapper ---"
+          grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties
+          echo "--- extractNativeLibs ---"
+          grep -o 'extractNativeLibs="[^"]*"' android/AndroidManifest.xml
+
+      - name: Build firebird (${{ matrix.abi }})
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          mkdir build && cd build
+          qmake ../firebird.pro CONFIG+=release \
+            ANDROID_MIN_SDK_VERSION=${{ matrix.min_sdk }} \
+            ANDROID_TARGET_SDK_VERSION=${{ matrix.target_sdk }}
+          make -j"$(nproc)"
+
+      - name: Install native library
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          cd build
+          make INSTALL_ROOT="$PWD/android-build" install
+
+      - name: Pack APK
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PWD: ${{ secrets.ANDROID_KEYSTORE_PWD }}
+        run: |
+          set -euo pipefail
+          cd build
+          ADQ="$(qmake -query QT_INSTALL_BINS)/androiddeployqt"
+          [ -x "$ADQ" ] || ADQ="$(qmake -query QT_HOST_BINS 2>/dev/null)/androiddeployqt"
+          [ -x "$ADQ" ] || ADQ="$(find "${QT_ROOT_DIR:-$PWD/..}/.." -name androiddeployqt -type f -executable 2>/dev/null | head -n1)"
+          [ -x "$ADQ" ] || { echo "error: androiddeployqt not found" >&2; exit 1; }
+          echo "Using $ADQ"
+
+          APK="$PWD/android-build/firebird-emu-${{ matrix.abi }}.apk"
+          if [ -n "${ANDROID_KEYSTORE_PWD:-}" ]; then
+            echo "$ANDROID_KEYSTORE" | base64 -d > keystore.jks
+            "$ADQ" \
+              --android-platform ${{ matrix.deploy_platform }} \
+              --input android-firebird-emu-deployment-settings.json \
+              --output "$PWD/android-build" \
+              --apk "$APK" \
+              --sign keystore.jks firebirdemugh \
+              --storepass "$ANDROID_KEYSTORE_PWD"
+          else
+            "$ADQ" \
+              --android-platform ${{ matrix.deploy_platform }} \
+              --input android-firebird-emu-deployment-settings.json \
+              --output "$PWD/android-build" \
+              --apk "$APK"
+          fi
+          test -f "$APK"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: firebird-emu-${{ matrix.label }}-${{ matrix.abi }}
+          path: build/android-build/firebird-emu-${{ matrix.abi }}.apk
+          if-no-files-found: error
+
+  package-legacy:
+    name: Bundle legacy APKs (Android 6-8)
+    needs: build
+    if: always() && needs.build.result != 'cancelled'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Download Android 6-7 APKs
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: firebird-emu-android6-7-*
+          path: legacy-apks
+
+      - name: Download Android 8 APKs
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: firebird-emu-android8-*
+          path: legacy-apks
+
+      - name: Confirm we have something to package
+        run: |
+          if [ ! -d legacy-apks ] || [ -z "$(find legacy-apks -name '*.apk')" ]; then
+            echo "No legacy APKs found — the build jobs must have failed." >&2
+            exit 1
+          fi
+          find legacy-apks -name '*.apk' | sort
+
+      - name: Add README and bundle
+        run: |
+          cat > legacy-apks/README.txt <<'EOF'
+          Firebird Emu — legacy Android builds
+
+          firebird-emu-android6-7-arm64-v8a/     Qt 6.4.3, arm64-v8a     Android 6.0+
+          firebird-emu-android6-7-armeabi-v7a/   Qt 6.4.3, armeabi-v7a   Android 6.0+
+          firebird-emu-android8-arm64-v8a/       Qt 6.7.3, arm64-v8a     Android 8.0+
+          firebird-emu-android8-armeabi-v7a/     Qt 6.7.3, armeabi-v7a   Android 8.0+
+
+          Install the folder matching your Android version. Within it, pick
+          the APK matching your device's CPU: arm64-v8a for 64-bit devices
+          (almost everything since 2017), armeabi-v7a for older 32-bit ones.
+          EOF
+
+          zip -r legacyandroid.zip legacy-apks
+          ls -la legacyandroid.zip
+
+      - name: Upload legacy bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: legacyandroid
+          path: legacyandroid.zip
+          if-no-files-found: error
