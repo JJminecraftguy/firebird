@@ -47,11 +47,12 @@ RowLayout {
 
             font.italic: filePath === ""
             text: { forceRefresh; return filePath === "" ? qsTr("(none)") : Emu.basename(filePath); }
-            color: { forceRefresh; return ((!selectExisting && Emu.saveDialogSupported()) || filePath === "" || Emu.fileExists(filePath)) ? paletteActive.text : "red"; }
+            color: { forceRefresh; return ((!selectExisting && Emu.saveDialogSupported()) || filePath === "" || Emu.fileExists(filePath)) ? ((paletteActive.window.hslLightness < 0.5) ? "white" : paletteActive.text) : "red"; }
         }
 
         FBLabel {
             id: subtextLabel
+            color: (paletteActive.window.hslLightness < 0.5) ? "white" : paletteActive.text
             elide: "ElideRight"
 
             font.pixelSize: FBTextMetrics.normalSize * 0.8

@@ -23,8 +23,16 @@ GridLayout {
 
     EmuScreen {
         id: screen
-        implicitHeight: (mobileui.width - swipeBar.implicitWidth) / 320 * 240
+        // Fit 4:3 inside the available area, so it doesn't overflow when
+        // the container is wider than 4:3 (e.g. landscape on a 16:9 phone).
+        readonly property real _aspect: 320.0 / 240.0
+        readonly property real _availW: mobileui.width - swipeBar.implicitWidth
+        readonly property real _availH: mobileui.height
+        readonly property real _fitW: Math.min(_availW, _availH * _aspect)
+        implicitWidth: _fitW
+        implicitHeight: _fitW / _aspect
         Layout.fillWidth: true
+        Layout.maximumWidth: _fitW
 
         focus: true
 

@@ -5,6 +5,7 @@
 #include "mainwindow.h"
 #endif
 #include <QTranslator>
+#include <QPalette>
 
 #include <QWindow>
 #include <QQmlApplicationEngine>
@@ -77,7 +78,30 @@ int main(int argc, char **argv)
     // Qt 6 always enables High-DPI scaling and pixmaps, nothing to set up here.
 
     #ifdef MOBILE_UI
+        // Force the Material style to light theme regardless of the
+        // system's night-mode setting. Must be set before QGuiApplication.
+        qputenv("QT_QUICK_CONTROLS_MATERIAL_THEME", "Light");
+
         QGuiApplication app(argc, argv);
+
+        // Override the palette too, so light colors are used even if the
+        // active style is Fusion rather than Material.
+        {
+            QPalette lightPalette;
+            lightPalette.setColor(QPalette::Window,          QColor(0xef, 0xef, 0xef));
+            lightPalette.setColor(QPalette::WindowText,      Qt::black);
+            lightPalette.setColor(QPalette::Base,            Qt::white);
+            lightPalette.setColor(QPalette::AlternateBase,   QColor(0xf7, 0xf7, 0xf7));
+            lightPalette.setColor(QPalette::Text,            Qt::black);
+            lightPalette.setColor(QPalette::Button,          QColor(0xef, 0xef, 0xef));
+            lightPalette.setColor(QPalette::ButtonText,      Qt::black);
+            lightPalette.setColor(QPalette::BrightText,      Qt::red);
+            lightPalette.setColor(QPalette::Highlight,       QColor(0x30, 0x8c, 0xc6));
+            lightPalette.setColor(QPalette::HighlightedText, Qt::white);
+            lightPalette.setColor(QPalette::Disabled, QPalette::Text,       QColor(0xa0, 0xa0, 0xa0));
+            lightPalette.setColor(QPalette::Disabled, QPalette::ButtonText, QColor(0xa0, 0xa0, 0xa0));
+            QGuiApplication::setPalette(lightPalette);
+        }
 
         QTranslator appTranslator;
         loadAppTranslation(appTranslator, QLocale::system());

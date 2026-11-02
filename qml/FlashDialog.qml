@@ -24,6 +24,10 @@ Window {
     }
 
     color: paletteActive.window
+    readonly property color _fg: (paletteActive.window.hslLightness < 0.5) ? "white" : paletteActive.windowText
+    palette.windowText: _fg
+    palette.text: _fg
+    palette.buttonText: _fg
 
     signal flashCreated(string filePath)
 

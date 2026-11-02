@@ -5,7 +5,11 @@ import Firebird.Emu 1.0
 import Firebird.UIComponents 1.0
 
 ColumnLayout {
+    id: pageRoot
     property var kitModel
+    SystemPalette { id: paletteActive }
+    readonly property color _fg: (paletteActive.window.hslLightness < 0.5) ? "white" : paletteActive.text
+    readonly property color _hint: (paletteActive.window.hslLightness < 0.5) ? "#aaaaaa" : "#666666"
     Component.onCompleted: kitModel = Emu.kits
 
     spacing: 5
@@ -48,6 +52,8 @@ ColumnLayout {
 
             TextField {
                 id: nameEdit
+                color: pageRoot._fg
+                placeholderTextColor: pageRoot._hint
                 placeholderText: qsTr("Name")
                 Layout.fillWidth: true
 
