@@ -50,8 +50,7 @@ jobs:
         msystem: ${{ matrix.msystem }}
         update: true
         install: >-
-          mingw-w64-${{ matrix.msys_pkg }}-gcc
-          mingw-w64-${{ matrix.msys_pkg }}-make
+          mingw-w64-${{ matrix.msys_pkg }}-toolchain
           mingw-w64-${{ matrix.msys_pkg }}-zlib
 
     - name: Install runtime libraries of the Qt kit (MSYS2)
