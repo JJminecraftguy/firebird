@@ -40,6 +40,32 @@ QImage renderFramebuffer()
     return image;
 }
 
+static void paintFramebufferInto(QPainter *p, const QRect &target, double imageDpr)
+{
+    if(hdq1w.lcd_contrast == 0)
+    {
+        p->fillRect(target, emulate_cx ? Qt::black : Qt::white);
+        p->setPen(emulate_cx ? Qt::white : Qt::black);
+        p->drawText(target, Qt::AlignCenter, QObject::tr("LCD turned off"));
+    }
+    else
+    {
+        QImage image = renderFramebuffer().scaled(target.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        image.setDevicePixelRatio(imageDpr);
+        p->drawImage(target.x() + (target.width() - image.width()) / 2,
+                     target.y() + (target.height() - image.height()) / 2,
+                     image);
+    }
+
+    if(in_debugger)
+    {
+        p->setCompositionMode(QPainter::CompositionMode_SourceOver);
+        p->fillRect(target, QColor(30, 30, 30, 150));
+        p->setPen(Qt::white);
+        p->drawText(target, Qt::AlignCenter, QObject::tr("In debugger"));
+    }
+}
+
 void paintFramebuffer(QPainter *p)
 {
 #ifdef IS_IOS_BUILD
@@ -52,27 +78,7 @@ void paintFramebuffer(QPainter *p)
 #endif
 
     QRect painterWindowScaled(p->window().topLeft(), p->window().size() / devicePixelRatio);
-
-    if(hdq1w.lcd_contrast == 0)
-    {
-        p->fillRect(painterWindowScaled, emulate_cx ? Qt::black : Qt::white);
-        p->setPen(emulate_cx ? Qt::white : Qt::black);
-        p->drawText(painterWindowScaled, Qt::AlignCenter, QObject::tr("LCD turned off"));
-    }
-    else
-    {
-        QImage image = renderFramebuffer().scaled(p->window().size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        image.setDevicePixelRatio(devicePixelRatio);
-        p->drawImage((p->window().width() - image.width()) / 2, (p->window().height() - image.height()) / 2, image);
-    }
-
-    if(in_debugger)
-    {
-        p->setCompositionMode(QPainter::CompositionMode_SourceOver);
-        p->fillRect(painterWindowScaled, QColor(30, 30, 30, 150));
-        p->setPen(Qt::white);
-        p->drawText(painterWindowScaled, Qt::AlignCenter, QObject::tr("In debugger"));
-    }
+    paintFramebufferInto(p, painterWindowScaled, devicePixelRatio);
 }
 
 QMLFramebuffer::QMLFramebuffer(QQuickItem *parent)
@@ -83,5 +89,10 @@ QMLFramebuffer::QMLFramebuffer(QQuickItem *parent)
 
 void QMLFramebuffer::paint(QPainter *p)
 {
-    paintFramebuffer(p);
+    // Use the item's own bounds, not the top-level window. The painter is
+    // already set up so (0,0) is the item's top-left. dpr = 1 because the
+    // QQuickPaintedItem painter is already scaled by the scene graph; the
+    // image should be laid out in item-local logical pixels.
+    const QRect target(0, 0, int(width()), int(height()));
+    paintFramebufferInto(p, target, 1.0);
 }
