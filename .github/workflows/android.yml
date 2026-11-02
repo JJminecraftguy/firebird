@@ -1,4 +1,4 @@
-name: Test Android Qt 6.11
+name: Test Android Qt 6.12
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   build:
-    name: ${{ matrix.abi }} · Qt 6.11.3 · API 28+
+    name: ${{ matrix.abi }} · Qt 6.12.0 · API 28+
     runs-on: ubuntu-24.04
 
     strategy:
@@ -52,11 +52,11 @@ jobs:
           ndk-version: r27c
           add-to-path: false
 
-      - name: Install Qt 6.11.3 (${{ matrix.abi }})
+      - name: Install Qt 6.12.0 (${{ matrix.abi }})
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.11.3'
-          host: 'linux'
+          version: '6.12.0'
+          host: 'all_os'
           target: 'android'
           arch: '${{ matrix.qt_arch }}'
           cache: true
