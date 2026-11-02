@@ -74,9 +74,20 @@ jobs:
       - name: Verify toolchain
         run: |
           qmake -v
-          echo "NDK:        ${{ steps.setup-ndk.outputs.ndk-path }}"
-          echo "QT_INSTALL_BINS: $(qmake -query QT_INSTALL_BINS)"
-          test -x "$(qmake -query QT_INSTALL_BINS)/androiddeployqt"
+          echo "NDK:                      ${{ steps.setup-ndk.outputs.ndk-path }}"
+          echo "QT_INSTALL_BINS (target): $(qmake -query QT_INSTALL_BINS)"
+          echo "QT_HOST_BINS:             $(qmake -query QT_HOST_BINS 2>/dev/null || echo '<unset>')"
+          echo "QT_ROOT_DIR:              ${QT_ROOT_DIR:-<unset>}"
+          # androiddeployqt is a host tool: it lives in the desktop Qt that
+          # install-qt-action pulls in via --autodesktop, not in the target bin.
+          ADQ="$(qmake -query QT_INSTALL_BINS)/androiddeployqt"
+          [ -x "$ADQ" ] || ADQ="$(qmake -query QT_HOST_BINS 2>/dev/null)/androiddeployqt"
+          [ -x "$ADQ" ] || ADQ="$(find "${QT_ROOT_DIR:-$PWD/..}/.." -name androiddeployqt -type f -executable 2>/dev/null | head -n1)"
+          if [ -x "$ADQ" ]; then
+            echo "androiddeployqt:          $ADQ"
+          else
+            echo "warning: androiddeployqt not located yet; the pack step will retry" >&2
+          fi
 
       - name: Build firebird (${{ matrix.abi }})
         env:
@@ -98,16 +109,14 @@ jobs:
           set -euo pipefail
           cd build
 
-          # Qt 6.4 keeps androiddeployqt in the host bin dir (not libexec).
           ADQ="$(qmake -query QT_INSTALL_BINS)/androiddeployqt"
-          if [ ! -x "$ADQ" ]; then
-            ADQ="$(find "${QT_ROOT_DIR:-$PWD/..}/.." -name androiddeployqt -type f -executable 2>/dev/null | head -n1)"
-          fi
+          [ -x "$ADQ" ] || ADQ="$(qmake -query QT_HOST_BINS 2>/dev/null)/androiddeployqt"
+          [ -x "$ADQ" ] || ADQ="$(find "${QT_ROOT_DIR:-$PWD/..}/.." -name androiddeployqt -type f -executable 2>/dev/null | head -n1)"
           [ -x "$ADQ" ] || { echo "error: androiddeployqt not found" >&2; exit 1; }
           echo "Using $ADQ"
 
-          # Qt 6.4.3 still converts compileSdkVersion to an integer, so avoid
-          # the runner's "android-36-ext19" platform by pinning android-31.
+          # Qt 6.4.3 still does androidCompileSdkVersion.toInteger(), which
+          # throws on the runner's "android-36-ext19" platform; pin android-31.
           APK="$PWD/android-build/firebird-emu-${{ matrix.abi }}.apk"
           if [ -n "${ANDROID_KEYSTORE_PWD:-}" ]; then
             echo "$ANDROID_KEYSTORE" | base64 -d > keystore.jks
