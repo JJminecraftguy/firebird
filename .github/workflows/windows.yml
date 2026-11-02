@@ -83,6 +83,7 @@ jobs:
         host: 'windows'
         target: 'desktop'
         arch: 'win64_mingw'
+        aqtsource: 'git+https://github.com/miurahr/aqtinstall.git'
         cache: true
 
     - name: Install Qt ${{ matrix.qt_version }} (self-built 32-bit kit)
