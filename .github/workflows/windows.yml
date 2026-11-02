@@ -82,8 +82,8 @@ jobs:
         version: '${{ matrix.qt_version }}'
         host: 'windows'
         target: 'desktop'
-        arch: 'win64_mingw' # Ensure this matches your intended architecture
-        tools: 'tools_mingw'
+        arch: 'win64_mingw'
+        tools: 'qt.tools.win64_mingw1310'
         add-tools-to-path: true
         aqtsource: 'git+https://github.com/miurahr/aqtinstall.git'
         cache: true
