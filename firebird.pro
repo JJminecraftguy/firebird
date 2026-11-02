@@ -1,7 +1,7 @@
 # Qt 6.2 is the minimum because the Android build uses it (it is the last
 # Qt version supporting Android 6-8). Desktop builds use newer versions.
 lessThan(QT_MAJOR_VERSION, 6): error("You need at least Qt 6.2 to build Firebird!")
-equals(QT_MAJOR_VERSION, 6):lessThan(QT_MINOR_VERSION, 2): error("You need at least Qt 6.2 to build Firebird!")
+equals(QT_MAJOR_VERSION, 6):lessThan(QT_MINOR_VERSION, 3): error("You need at least Qt 6.2 to build Firebird!")
 
 # Version
 DEFINES += FB_VERSION=1.6
