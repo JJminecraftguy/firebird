@@ -376,8 +376,13 @@ if(WIN32)
     target_compile_options(firebird-emu PRIVATE -mno-ms-bitfields)
 endif()
 
-if(NOT ANDROID AND FB_ARCH STREQUAL "arm")
-    target_compile_options(firebird-emu PRIVATE -march=armv7-a -marm)
+if(FB_ARCH STREQUAL "arm")
+    if(ANDROID)
+        # NDK already targets armv7-a; only the instruction set needs forcing.
+        target_compile_options(firebird-emu PRIVATE -marm)
+    else()
+        target_compile_options(firebird-emu PRIVATE -march=armv7-a -marm)
+    endif()
 endif()
 
 if(ANDROID)
