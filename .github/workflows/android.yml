@@ -54,9 +54,6 @@ jobs:
           ndk-version: r27c
           add-to-path: false
 
-      # One ABI per job: Qt 6.12 publishes per-ABI repositories, and aqt 3.3.0
-      # (pinned by this action) only resolves those when a single arch is asked
-      # for. Asking for both at once hits the legacy combined repo and fails.
       - name: Install Qt 6.12.0 (${{ matrix.abi }})
         uses: jurplel/install-qt-action@v4
         with:
@@ -66,12 +63,20 @@ jobs:
           arch: '${{ matrix.qt_arch }}'
           cache: true
 
-      - name: Configure (CMake)
+       - name: Configure (CMake)
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
-          "$QT_ROOT_DIR/bin/qt-cmake" \
+          set -euo pipefail
+
+          QTC="$QT_ROOT_DIR/bin/qt-cmake"
+          test -f "$QTC" || { echo "error: $QTC missing" >&2; ls -la "$QT_ROOT_DIR/bin" >&2; exit 1; }
+
+          find "$QT_ROOT_DIR/bin" "$QT_ROOT_DIR/libexec" \
+            -maxdepth 1 -type f -exec chmod +x {} + 2>/dev/null || true
+
+          sh "$QTC" \
             -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
             -DQT_ANDROID_MIN_SDK_VERSION=28 \
@@ -80,9 +85,6 @@ jobs:
       - name: Build firebird (${{ matrix.abi }})
         run: cmake --build build --parallel
 
-      # The `apk` target runs androiddeployqt: it stages the native libraries
-      # and produces build/android-build/<target>.apk. Equivalent to the
-      # qmake workflow's `make install` + manual androiddeployqt invocation.
       - name: Pack APK (${{ matrix.abi }})
         run: |
           set -euo pipefail
