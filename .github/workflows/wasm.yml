@@ -1,0 +1,56 @@
+name: Build for WebAssembly
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Install Emscripten 5.0.5
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '5.0.5'
+          actions-cache-folder: 'emsdk-cache'
+
+      - name: Verify Emscripten version
+        run: emcc --version | head -1
+
+      - name: Install Qt 6.12.0 for WebAssembly
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.12.0'
+          host: 'all_os'
+          target: 'wasm'
+          arch: 'wasm_singlethread'
+          aqtsource: 'git+https://github.com/miurahr/aqtinstall.git'
+          cache: true
+
+      - name: Build
+        run: |
+          mkdir build
+          cd build
+          qmake ..
+          make -j$(nproc)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firebird-emu-wasm
+          path: |
+            build/firebird-emu.html
+            build/firebird-emu.js
+            build/firebird-emu.wasm
+            build/qtloader.js
+            build/qtlogo.svg
+          if-no-files-found: error
