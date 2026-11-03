@@ -1,4 +1,3 @@
-
 name: Build for Android
 
 on:
@@ -56,74 +55,74 @@ jobs:
           arch: 'android_arm64_v8a,android_armv7'
           cache: true
 
+      # qmake ANDROID_ABIS="arm64-v8a armeabi-v7a"  ->  QT_ANDROID_BUILD_ALL_ABIS=ON
+      # qmake ANDROID_MIN_SDK_VERSION / TARGET_SDK_VERSION -> QT_ANDROID_* (-D overrides
+      # the defaults baked into CMakeLists.txt, which only set them if not defined)
+      - name: Configure (CMake)
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          "$QT_ROOT_DIR/bin/qt-cmake" \
+            -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DQT_ANDROID_BUILD_ALL_ABIS=ON \
+            -DQT_ANDROID_MIN_SDK_VERSION=28 \
+            -DQT_ANDROID_TARGET_SDK_VERSION=36
+
       - name: Build firebird (ARM64 + ARM32)
-        env:
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
-        run: |
-          mkdir build
-          cd build
+        run: cmake --build build --parallel
 
-          qmake ../firebird.pro CONFIG+=release \
-            ANDROID_ABIS="arm64-v8a armeabi-v7a" \
-            ANDROID_MIN_SDK_VERSION=28 \
-            ANDROID_TARGET_SDK_VERSION=36
-
-          make -j"$(nproc)"
-
-      - name: Install native libraries
-        env:
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
-        run: |
-          cd build
-          make INSTALL_ROOT="$PWD/android-build" install
-
+      # The `apk` target drives androiddeployqt and stages the .so files from both
+      # per-ABI builds into a single unsigned universal APK.
       - name: Pack universal APK
+        run: |
+          set -euo pipefail
+          cmake --build build --target apk
+
+          APK="$(find build -path '*android-build/firebird-emu.apk' -print -quit)"
+          test -n "$APK" || { echo "error: APK not produced" >&2; find build -name '*.apk' >&2; exit 1; }
+          install -D "$APK" build/firebird-emu.apk
+
+          echo "APK contents (native libs):"
+          unzip -l build/firebird-emu.apk | grep 'lib/'
+          unzip -l build/firebird-emu.apk | grep -q 'lib/arm64-v8a/'    || { echo "error: arm64-v8a missing" >&2; exit 1; }
+          unzip -l build/firebird-emu.apk | grep -q 'lib/armeabi-v7a/'  || { echo "error: armeabi-v7a missing" >&2; exit 1; }
+
+      # Same keystore/alias as the qmake workflow's `androiddeployqt --sign`.
+      # apksigner's --key-pass defaults to --ks-pass, matching androiddeployqt's
+      # behaviour of using --storepass for both, so both are passed explicitly here.
+      - name: Sign APK
         env:
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
           ANDROID_KEYSTORE_PWD: ${{ secrets.ANDROID_KEYSTORE_PWD }}
         run: |
           set -euo pipefail
-          cd build
-
-          ADQ="$(qmake -query QT_INSTALL_BINS)/androiddeployqt"
-          [ -x "$ADQ" ] || ADQ="$(qmake -query QT_HOST_BINS 2>/dev/null)/androiddeployqt"
-          [ -x "$ADQ" ] || ADQ="$(find "${QT_ROOT_DIR:-$PWD/..}/.." -name androiddeployqt -type f -executable 2>/dev/null | head -n1)"
-          [ -x "$ADQ" ] || { echo "error: androiddeployqt not found" >&2; exit 1; }
-
-          echo "Using $ADQ"
-
-          APK="$PWD/android-build/firebird-emu.apk"
-
-          if [ -n "${ANDROID_KEYSTORE_PWD:-}" ]; then
-            echo "$ANDROID_KEYSTORE" | base64 -d > keystore.jks
-
-            "$ADQ" \
-              --android-platform android-36 \
-              --input android-firebird-emu-deployment-settings.json \
-              --output "$PWD/android-build" \
-              --apk "$APK" \
-              --sign keystore.jks firebirdemugh \
-              --storepass "$ANDROID_KEYSTORE_PWD"
-          else
-            "$ADQ" \
-              --android-platform android-36 \
-              --input android-firebird-emu-deployment-settings.json \
-              --output "$PWD/android-build" \
-              --apk "$APK"
-          fi
-
+          APK="build/firebird-emu.apk"
           test -f "$APK"
 
-          echo "APK contents:"
-          unzip -l "$APK" | grep 'lib/'
+          if [ -z "${ANDROID_KEYSTORE_PWD:-}" ]; then
+            echo "No signing key configured, leaving the APK unsigned."
+            exit 0
+          fi
+
+          echo "$ANDROID_KEYSTORE" | base64 -d > keystore.jks
+
+          APKSIGNER="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner"
+          "$APKSIGNER" sign \
+            --ks keystore.jks \
+            --ks-key-alias firebirdemugh \
+            --ks-pass "pass:${ANDROID_KEYSTORE_PWD}" \
+            --key-pass "pass:${ANDROID_KEYSTORE_PWD}" \
+            --out "${APK}.signed" \
+            "$APK"
+          mv "${APK}.signed" "$APK"
+
+          "$APKSIGNER" verify --print-certs "$APK"
 
       - name: Upload universal APK
         uses: actions/upload-artifact@v7
         with:
           name: firebird-emu-android-universal
-          path: build/android-build/firebird-emu.apk
+          path: build/firebird-emu.apk
           if-no-files-found: error
