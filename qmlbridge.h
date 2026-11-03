@@ -124,6 +124,11 @@ public:
 
     Q_INVOKABLE bool saveDialogSupported();
 
+#ifdef __EMSCRIPTEN__
+    Q_INVOKABLE void loadFile(int index, int role);
+    Q_INVOKABLE bool saveSnapshot();
+#endif
+
     void setActive(bool b);
 
     void notifyButtonStateChanged(int row, int col, bool state);
