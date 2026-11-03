@@ -95,21 +95,29 @@ Rectangle {
                      text: qsTr("Flash saved, but no snapshot location configured.\nYou won't be able to resume.")
                  }
 
-                 onClicked: {
-                     var flash_path = Emu.getFlashPath();
-                     var snap_path = Emu.getSnapshotPath();
+                onClicked: {
+                    if(Qt.platform.os === "wasm") {
+                        if(!Emu.saveSnapshot())
+                            saveFailedDialog.visible = true;
 
-                     if(flash_path === "" || !Emu.saveFlash())
-                         saveFailedDialog.visible = true;
-                     else
-                     {
-                         if(snap_path)
-                             Emu.suspend();
-                         else
-                             snapWarnDialog.visible = true;
-                     }
+                        closeDrawer();
+                        return;
+                    }
 
-                     closeDrawer();
+                    var flash_path = Emu.getFlashPath();
+                    var snap_path = Emu.getSnapshotPath();
+
+                    if(flash_path === "" || !Emu.saveFlash())
+                        saveFailedDialog.visible = true;
+                    else
+                    {
+                        if(snap_path)
+                            Emu.suspend();
+                        else
+                            snapWarnDialog.visible = true;
+                    }
+
+                    closeDrawer();
                 }
             }
 
