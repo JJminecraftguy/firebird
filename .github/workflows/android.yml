@@ -1,9 +1,11 @@
+
 name: Build for Android
 
 on:
   push:
+    branches: [ master ]
   pull_request:
-  workflow_dispatch:
+    branches: [ master ]
 
 permissions:
   contents: read
@@ -14,17 +16,7 @@ concurrency:
 
 jobs:
   build:
-    name: build · ${{ matrix.abi }}
     runs-on: ubuntu-24.04
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - qt_arch: 'android_arm64_v8a'
-            abi: 'arm64-v8a'
-          - qt_arch: 'android_armv7'
-            abi: 'armeabi-v7a'
 
     steps:
       - name: Checkout
@@ -48,33 +40,38 @@ jobs:
             "build-tools;36.0.0" \
             "platform-tools"
 
-      - uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1
+      - name: Setup NDK
+        uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1
         id: setup-ndk
         with:
           ndk-version: r27c
           add-to-path: false
 
-      - name: Install Qt 6.12.0
+      - name: Install Qt 6.12.0 (ARM64 + ARM32)
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.12.0'
           host: 'all_os'
           target: 'android'
-          arch: '${{ matrix.qt_arch }}'
+          arch: 'android_arm64_v8a,android_armv7'
           cache: true
 
-      - name: Build firebird (${{ matrix.abi }})
+      - name: Build firebird (ARM64 + ARM32)
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
-          mkdir build && cd build
+          mkdir build
+          cd build
+
           qmake ../firebird.pro CONFIG+=release \
+            ANDROID_ABIS="arm64-v8a armeabi-v7a" \
             ANDROID_MIN_SDK_VERSION=28 \
             ANDROID_TARGET_SDK_VERSION=36
+
           make -j"$(nproc)"
 
-      - name: Install native library
+      - name: Install native libraries
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
@@ -82,7 +79,7 @@ jobs:
           cd build
           make INSTALL_ROOT="$PWD/android-build" install
 
-      - name: Pack APK
+      - name: Pack universal APK
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
@@ -91,15 +88,19 @@ jobs:
         run: |
           set -euo pipefail
           cd build
+
           ADQ="$(qmake -query QT_INSTALL_BINS)/androiddeployqt"
           [ -x "$ADQ" ] || ADQ="$(qmake -query QT_HOST_BINS 2>/dev/null)/androiddeployqt"
           [ -x "$ADQ" ] || ADQ="$(find "${QT_ROOT_DIR:-$PWD/..}/.." -name androiddeployqt -type f -executable 2>/dev/null | head -n1)"
           [ -x "$ADQ" ] || { echo "error: androiddeployqt not found" >&2; exit 1; }
+
           echo "Using $ADQ"
 
-          APK="$PWD/android-build/firebird-emu-${{ matrix.abi }}.apk"
+          APK="$PWD/android-build/firebird-emu.apk"
+
           if [ -n "${ANDROID_KEYSTORE_PWD:-}" ]; then
             echo "$ANDROID_KEYSTORE" | base64 -d > keystore.jks
+
             "$ADQ" \
               --android-platform android-36 \
               --input android-firebird-emu-deployment-settings.json \
@@ -114,11 +115,15 @@ jobs:
               --output "$PWD/android-build" \
               --apk "$APK"
           fi
+
           test -f "$APK"
 
-      - name: Upload APK
+          echo "APK contents:"
+          unzip -l "$APK" | grep 'lib/'
+
+      - name: Upload universal APK
         uses: actions/upload-artifact@v7
         with:
-          name: firebird-emu-android9plus-${{ matrix.abi }}
-          path: build/android-build/firebird-emu-${{ matrix.abi }}.apk
+          name: firebird-emu-android-universal
+          path: build/android-build/firebird-emu.apk
           if-no-files-found: error
