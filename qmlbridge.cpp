@@ -3,6 +3,11 @@
 
 #include <QUrl>
 
+#ifdef __EMSCRIPTEN__
+#include <QFile>
+#include <QFileDialog>
+#endif
+
 #include "emuthread.h"
 #include "qmlbridge.h"
 
@@ -650,6 +655,51 @@ bool QMLBridge::saveDialogSupported()
     // Qt 6 uses ACTION_CREATE_DOCUMENT for save dialogs.
     return true;
 }
+
+#ifdef __EMSCRIPTEN__
+void QMLBridge::loadFile(int index, int role)
+{
+    QFileDialog::getOpenFileContent(
+        QStringLiteral("File%1 (*.*)").arg(role),
+        [this, index, role](const QString &, const QByteArray &fileContent) {
+            int kitId = kit_model.getDataRow(index, KitModel::IDRole).toInt();
+            // MEMFS path: valid for this session only. The kit remembers the
+            // filename so the emulator can re-open it during this session.
+            QString path = QStringLiteral("/tmp/kit%1-%2").arg(kitId).arg(role);
+            QFile file(path);
+            if (file.open(QFile::WriteOnly)) {
+                file.write(fileContent);
+                file.close();
+                kit_model.setDataRow(index, path, role);
+            }
+        });
+}
+
+bool QMLBridge::saveSnapshot()
+{
+    const int kitIndex = kit_model.indexForID(current_kit_id);
+    QString filename = kit_model.getDataRow(kitIndex, KitModel::SnapshotRole).toString();
+    if(filename.isEmpty()) {
+        filename = QStringLiteral("/tmp/kit%1-%2").arg(current_kit_id).arg(KitModel::SnapshotRole);
+        kit_model.setDataRow(kitIndex, filename, KitModel::SnapshotRole);
+    }
+
+    if(!emu_suspend(filename.toUtf8().constData()))
+        return false;
+
+    QFile snapshotFile(filename);
+    if(!snapshotFile.open(QIODevice::ReadOnly))
+        return false;
+
+    auto snapshotData = snapshotFile.readAll();
+    QFileDialog::saveFileContent(
+        snapshotData,
+        QStringLiteral("%1-snapshot.img").arg(
+            kit_model.getDataRow(kitIndex, KitModel::NameRole).toString()));
+
+    return true;
+}
+#endif
 
 void QMLBridge::speedChanged(double speed)
 {
