@@ -63,7 +63,7 @@ jobs:
           arch: '${{ matrix.qt_arch }}'
           cache: true
 
-       - name: Configure (CMake)
+      - name: Configure (CMake)
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
