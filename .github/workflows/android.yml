@@ -2,9 +2,8 @@ name: Build for Android
 
 on:
   push:
-    branches: [ master ]
   pull_request:
-    branches: [ master ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,7 +14,17 @@ concurrency:
 
 jobs:
   build:
+    name: build · ${{ matrix.abi }}
     runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - qt_arch: 'android_arm64_v8a'
+            abi: 'arm64-v8a'
+          - qt_arch: 'android_armv7'
+            abi: 'armeabi-v7a'
 
     steps:
       - name: Checkout
@@ -39,25 +48,24 @@ jobs:
             "build-tools;36.0.0" \
             "platform-tools"
 
-      - name: Setup NDK
-        uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1
+      - uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1
         id: setup-ndk
         with:
           ndk-version: r27c
           add-to-path: false
 
-      - name: Install Qt 6.12.0 (ARM64 + ARM32)
+      # One ABI per job: Qt 6.12 publishes per-ABI repositories, and aqt 3.3.0
+      # (pinned by this action) only resolves those when a single arch is asked
+      # for. Asking for both at once hits the legacy combined repo and fails.
+      - name: Install Qt 6.12.0 (${{ matrix.abi }})
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.12.0'
           host: 'all_os'
           target: 'android'
-          arch: 'android_arm64_v8a,android_armv7'
+          arch: '${{ matrix.qt_arch }}'
           cache: true
 
-      # qmake ANDROID_ABIS="arm64-v8a armeabi-v7a"  ->  QT_ANDROID_BUILD_ALL_ABIS=ON
-      # qmake ANDROID_MIN_SDK_VERSION / TARGET_SDK_VERSION -> QT_ANDROID_* (-D overrides
-      # the defaults baked into CMakeLists.txt, which only set them if not defined)
       - name: Configure (CMake)
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
@@ -66,39 +74,36 @@ jobs:
           "$QT_ROOT_DIR/bin/qt-cmake" \
             -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DQT_ANDROID_BUILD_ALL_ABIS=ON \
             -DQT_ANDROID_MIN_SDK_VERSION=28 \
             -DQT_ANDROID_TARGET_SDK_VERSION=36
 
-      - name: Build firebird (ARM64 + ARM32)
+      - name: Build firebird (${{ matrix.abi }})
         run: cmake --build build --parallel
 
-      # The `apk` target drives androiddeployqt and stages the .so files from both
-      # per-ABI builds into a single unsigned universal APK.
-      - name: Pack universal APK
+      # The `apk` target runs androiddeployqt: it stages the native libraries
+      # and produces build/android-build/<target>.apk. Equivalent to the
+      # qmake workflow's `make install` + manual androiddeployqt invocation.
+      - name: Pack APK (${{ matrix.abi }})
         run: |
           set -euo pipefail
           cmake --build build --target apk
 
           APK="$(find build -path '*android-build/firebird-emu.apk' -print -quit)"
           test -n "$APK" || { echo "error: APK not produced" >&2; find build -name '*.apk' >&2; exit 1; }
-          install -D "$APK" build/firebird-emu.apk
+          install -D "$APK" "build/firebird-emu-${{ matrix.abi }}.apk"
 
-          echo "APK contents (native libs):"
-          unzip -l build/firebird-emu.apk | grep 'lib/'
-          unzip -l build/firebird-emu.apk | grep -q 'lib/arm64-v8a/'    || { echo "error: arm64-v8a missing" >&2; exit 1; }
-          unzip -l build/firebird-emu.apk | grep -q 'lib/armeabi-v7a/'  || { echo "error: armeabi-v7a missing" >&2; exit 1; }
+          unzip -l "build/firebird-emu-${{ matrix.abi }}.apk" | grep -q "lib/${{ matrix.abi }}/" \
+            || { echo "error: lib/${{ matrix.abi }} missing from APK" >&2; exit 1; }
 
-      # Same keystore/alias as the qmake workflow's `androiddeployqt --sign`.
-      # apksigner's --key-pass defaults to --ks-pass, matching androiddeployqt's
-      # behaviour of using --storepass for both, so both are passed explicitly here.
-      - name: Sign APK
+      # Same keystore/alias/password semantics as androiddeployqt --sign in the
+      # qmake workflow (--storepass is used for both store and key password).
+      - name: Sign APK (${{ matrix.abi }})
         env:
           ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
           ANDROID_KEYSTORE_PWD: ${{ secrets.ANDROID_KEYSTORE_PWD }}
         run: |
           set -euo pipefail
-          APK="build/firebird-emu.apk"
+          APK="build/firebird-emu-${{ matrix.abi }}.apk"
           test -f "$APK"
 
           if [ -z "${ANDROID_KEYSTORE_PWD:-}" ]; then
@@ -120,9 +125,104 @@ jobs:
 
           "$APKSIGNER" verify --print-certs "$APK"
 
+      - name: Upload APK (${{ matrix.abi }})
+        uses: actions/upload-artifact@v7
+        with:
+          name: firebird-emu-android9plus-${{ matrix.abi }}
+          path: build/firebird-emu-${{ matrix.abi }}.apk
+          if-no-files-found: error
+
+  # Merge the two per-ABI APKs into one universal APK.
+  # The APKs differ only in lib/<abi>/ — same manifest, resources, assets,
+  # classes.dex — so dropping the second ABI's libraries into the first APK
+  # and re-signing produces a valid fat APK.
+  universal:
+    name: universal APK
+    needs: build
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.04
+
+      - name: Install build-tools
+        run: sdkmanager --install "build-tools;36.0.0"
+
+      - name: Download per-ABI APKs
+        uses: actions/download-artifact@v5
+        with:
+          pattern: firebird-emu-android9plus-*
+          path: apks
+
+      - name: Merge into universal APK
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PWD: ${{ secrets.ANDROID_KEYSTORE_PWD }}
+        run: |
+          set -euo pipefail
+
+          rm -rf work && mkdir -p work/base work/other work/merged
+
+          unzip -q apks/firebird-emu-android9plus-arm64-v8a/firebird-emu-arm64-v8a.apk       -d work/base
+          unzip -q apks/firebird-emu-android9plus-armeabi-v7a/firebird-emu-armeabi-v7a.apk   -d work/other
+
+          # Start from the 64-bit APK, add the 32-bit native libraries.
+          cp -a work/base/. work/merged/
+          mkdir -p work/merged/lib
+          cp -a work/other/lib/armeabi-v7a work/merged/lib/
+
+          # The old signature cannot survive re-zipping.
+          rm -rf work/merged/META-INF
+
+          cd work/merged
+
+          # Re-zip, but keep resources.arsc and *.so stored (uncompressed) —
+          # Android 11+ requires an uncompressed resources.arsc, and the
+          # 16 KB page-size requirement for targetSdk 35+/Android 15 applies
+          # to uncompressed native libraries.
+          zip -qr ../universal-unaligned.apk * \
+            -x resources.arsc 'lib/arm64-v8a/*.so' 'lib/armeabi-v7a/*.so'
+          zip -q -0 ../universal-unaligned.apk resources.arsc
+          zip -q -0 ../universal-unaligned.apk lib/arm64-v8a/*.so lib/armeabi-v7a/*.so
+
+          cd ..
+
+          # -p 4 aligns stored .so to 4 KB, -P 16 to 16 KB (Android 15+).
+          ZIPALIGN="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/36.0.0/zipalign"
+          "$ZIPALIGN" -f -p -P 16 universal-unaligned.apk universal.apk
+
+          # Sanity: both ABIs present.
+          unzip -l universal.apk | grep -q 'lib/arm64-v8a/'   || { echo "error: arm64-v8a missing" >&2; exit 1; }
+          unzip -l universal.apk | grep -q 'lib/armeabi-v7a/' || { echo "error: armeabi-v7a missing" >&2; exit 1; }
+
+          if [ -n "${ANDROID_KEYSTORE_PWD:-}" ]; then
+            echo "$ANDROID_KEYSTORE" | base64 -d > keystore.jks
+            APKSIGNER="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner"
+            "$APKSIGNER" sign \
+              --ks keystore.jks \
+              --ks-key-alias firebirdemugh \
+              --ks-pass "pass:${ANDROID_KEYSTORE_PWD}" \
+              --key-pass "pass:${ANDROID_KEYSTORE_PWD}" \
+              --out firebird-emu-universal.apk \
+              universal.apk
+            "$APKSIGNER" verify --print-certs firebird-emu-universal.apk
+          else
+            echo "No signing key configured, leaving the universal APK unsigned."
+            mv universal.apk firebird-emu-universal.apk
+          fi
+
+          echo "Universal APK contents (native libs):"
+          unzip -l firebird-emu-universal.apk | grep 'lib/'
+
       - name: Upload universal APK
         uses: actions/upload-artifact@v7
         with:
-          name: firebird-emu-android-universal
-          path: build/firebird-emu.apk
+          name: firebird-emu-android9plus-universal
+          path: work/firebird-emu-universal.apk
           if-no-files-found: error
