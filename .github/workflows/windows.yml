@@ -34,7 +34,7 @@ jobs:
             msystem: MINGW32
             msys_pkg: i686
             msys_env: mingw32
-            qt_version: '6.10.3'
+            qt_version: '6.12.0'
             pe_format: 'pei-i386'
 
     steps:
@@ -92,9 +92,9 @@ jobs:
       if: matrix.arch == 'win32'
       shell: pwsh
       run: |
-        $zip = "qt\qt-6.10.3-win32.zip"
+        $zip = "qt\qt-6.12.0-win32.zip"
         if (-not (Test-Path $zip)) { throw "$zip is missing" }
-        $qt = "C:\Qt\6.10.3\mingw_x32"
+        $qt = "C:\Qt\6.12.3\mingw_x32"
         New-Item -ItemType Directory -Force $qt | Out-Null
         7z x $zip "-o$qt" -y | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Extracting $zip failed (is the archive complete?)" }
