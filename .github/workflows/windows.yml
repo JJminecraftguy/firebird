@@ -94,7 +94,7 @@ jobs:
       run: |
         $zip = "qt\qt-6.12.0-win32.zip"
         if (-not (Test-Path $zip)) { throw "$zip is missing" }
-        $qt = "C:\Qt\6.12.3\mingw_x32"
+        $qt = "C:\Qt\6.12.0\mingw_x32"
         New-Item -ItemType Directory -Force $qt | Out-Null
         7z x $zip "-o$qt" -y | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Extracting $zip failed (is the archive complete?)" }
