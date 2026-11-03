@@ -45,7 +45,11 @@ unix: !android {
 
 QMAKE_CFLAGS += -g -std=gnu11 -Wall -Wextra
 QMAKE_CXXFLAGS += -g -Wall -Wextra -D QT_NO_CAST_FROM_ASCII
-LIBS += -lz
+wasm {
+    QMAKE_CFLAGS += -sUSE_ZLIB=1
+    QMAKE_CXXFLAGS += -sUSE_ZLIB=1
+    QMAKE_LFLAGS += -sUSE_ZLIB=1
+} else: LIBS += -lz
 
 # Override bad default options to enable better optimizations
 QMAKE_CFLAGS_RELEASE = -O3 -DNDEBUG
@@ -56,7 +60,7 @@ QMAKE_CXXFLAGS_RELEASE = -O3 -DNDEBUG
 # with Qt's -reduce-relocations option (QTBUG-86173).
 # MinGW fails with
 # lto1.exe: internal compiler error: in gen_subprogram_die, at dwarf2out.c:22668
-!clang | !if(linux|freebsd): !win32: CONFIG += ltcg
+!clang | !if(linux|freebsd|wasm): !win32: CONFIG += ltcg
 
 # noexecstack is not supported by MinGW's as
 !win32 {
