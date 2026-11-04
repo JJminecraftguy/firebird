@@ -297,14 +297,15 @@ foreach(_fb_dist IN LISTS FB_DISTFILES)
     endif()
 endforeach()
 
-set(QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
-
-if(NOT DEFINED QT_ANDROID_MIN_SDK_VERSION)
-    set(QT_ANDROID_MIN_SDK_VERSION "23")
-endif()
-if(NOT DEFINED QT_ANDROID_TARGET_SDK_VERSION)
-    set(QT_ANDROID_TARGET_SDK_VERSION "28")
-endif()
+# qmake: ANDROID_PACKAGE_SOURCE_DIR = $$PWD/android
+# qmake: isEmpty(ANDROID_MIN_SDK_VERSION): ANDROID_MIN_SDK_VERSION = 23
+# qmake: isEmpty(ANDROID_TARGET_SDK_VERSION): ANDROID_TARGET_SDK_VERSION = 28
+# qmake: package name comes from android/AndroidManifest.xml.
+# Qt 6 consumes these as target properties on the executable (set further
+# below, after qt_add_executable), not as plain variables.
+set(QT_ANDROID_PACKAGE_NAME        "org.firebird.emu" CACHE STRING "Android application package name")
+set(QT_ANDROID_MIN_SDK_VERSION     "23"               CACHE STRING "Android minimum SDK version")
+set(QT_ANDROID_TARGET_SDK_VERSION  "28"               CACHE STRING "Android target SDK version")
 
 set(QML_IMPORT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/qml" CACHE PATH "QML import path for Qt Creator's code model")
 
@@ -319,14 +320,17 @@ qt_add_executable(firebird-emu
     ${FB_DISTFILES_PRESENT}
 )
 
-if(DEFINED QT_ANDROID_PACKAGE_NAME AND NOT "${QT_ANDROID_PACKAGE_NAME}" STREQUAL "")
-    set_property(TARGET firebird-emu PROPERTY QT_ANDROID_PACKAGE_NAME "${QT_ANDROID_PACKAGE_NAME}")
-endif()
-if(DEFINED QT_ANDROID_MIN_SDK_VERSION AND NOT "${QT_ANDROID_MIN_SDK_VERSION}" STREQUAL "")
-    set_property(TARGET firebird-emu PROPERTY QT_ANDROID_MIN_SDK_VERSION "${QT_ANDROID_MIN_SDK_VERSION}")
-endif()
-if(DEFINED QT_ANDROID_TARGET_SDK_VERSION AND NOT "${QT_ANDROID_TARGET_SDK_VERSION}" STREQUAL "")
-    set_property(TARGET firebird-emu PROPERTY QT_ANDROID_TARGET_SDK_VERSION "${QT_ANDROID_TARGET_SDK_VERSION}")
+# Android packaging: Qt reads these as target properties when generating the
+# deployment settings. QT_ANDROID_PACKAGE_SOURCE_DIR is the one that makes
+# android/AndroidManifest.xml, android/res/ and android/build.gradle the source
+# of the manifest and the app icon; without it the APK uses Qt's defaults.
+if(ANDROID)
+    set_target_properties(firebird-emu PROPERTIES
+        QT_ANDROID_PACKAGE_SOURCE_DIR   "${CMAKE_CURRENT_SOURCE_DIR}/android"
+        QT_ANDROID_PACKAGE_NAME         "${QT_ANDROID_PACKAGE_NAME}"
+        QT_ANDROID_MIN_SDK_VERSION      "${QT_ANDROID_MIN_SDK_VERSION}"
+        QT_ANDROID_TARGET_SDK_VERSION   "${QT_ANDROID_TARGET_SDK_VERSION}"
+    )
 endif()
 
 target_link_libraries(firebird-emu PRIVATE
