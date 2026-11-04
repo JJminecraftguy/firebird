@@ -12,9 +12,15 @@ concurrency:
   group: android-modern-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Override to pin the app id. Left empty, it is read from
+  # android/AndroidManifest.xml — the same source the qmake build used, so the
+  # CMake APK installs as an upgrade of a previously installed qmake build.
+  ANDROID_PACKAGE_NAME: ''
+
 jobs:
   build:
-    name: build
+    name: build · universal
     runs-on: ubuntu-24.04
 
     steps:
@@ -45,6 +51,23 @@ jobs:
           ndk-version: r27c
           add-to-path: false
 
+      # Resolve the app id once, from the same manifest the qmake build used.
+      # If it differs from what you previously installed, override it via the
+      # ANDROID_PACKAGE_NAME env var at the top of the file.
+      - name: Resolve package name
+        run: |
+          set -euo pipefail
+          PKG="${ANDROID_PACKAGE_NAME:-}"
+          if [ -z "$PKG" ] && [ -f android/AndroidManifest.xml ]; then
+            PKG="$(grep -oP 'package="\K[^"]+' android/AndroidManifest.xml | head -n1 || true)"
+          fi
+          if [ -z "$PKG" ]; then
+            echo "::error::could not determine the Android package name; set ANDROID_PACKAGE_NAME"
+            exit 1
+          fi
+          echo "ANDROID_PACKAGE_NAME=$PKG" >> "$GITHUB_ENV"
+          echo "Using package name: $PKG"
+
       - name: Install Qt 6.12.0 (arm64-v8a)
         uses: jurplel/install-qt-action@v4
         with:
@@ -58,11 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "ARM64_QT_ROOT=$QT_ROOT_DIR" >> "$GITHUB_ENV"
-          test -f "$QT_ROOT_DIR/bin/qt-cmake" || {
-            echo "error: $QT_ROOT_DIR/bin/qt-cmake missing" >&2
-            ls -la "$QT_ROOT_DIR/bin" >&2 || true
-            exit 1
-          }
+          find "$QT_ROOT_DIR/bin" -maxdepth 1 -type f -exec chmod +x {} + 2>/dev/null || true
 
       - name: Install Qt 6.12.0 (armeabi-v7a)
         uses: jurplel/install-qt-action@v4
@@ -77,49 +96,37 @@ jobs:
         run: |
           set -euo pipefail
           echo "ARMV7_QT_ROOT=$QT_ROOT_DIR" >> "$GITHUB_ENV"
-          test -f "$QT_ROOT_DIR/bin/qt-cmake" || {
-            echo "error: $QT_ROOT_DIR/bin/qt-cmake missing" >&2
-            ls -la "$QT_ROOT_DIR/bin" >&2 || true
-            exit 1
-          }
+          find "$QT_ROOT_DIR/bin" -maxdepth 1 -type f -exec chmod +x {} + 2>/dev/null || true
 
-      - name: Configure + build (arm64-v8a)
+      - name: Build (arm64-v8a)
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           set -euo pipefail
-          QTC="$ARM64_QT_ROOT/bin/qt-cmake"
-          test -f "$QTC" || { echo "error: $QTC missing" >&2; exit 1; }
-          find "$ARM64_QT_ROOT/bin" -maxdepth 1 -type f -exec chmod +x {} + 2>/dev/null || true
-
-          sh "$QTC" -S . -B build-arm64 \
+          sh "$ARM64_QT_ROOT/bin/qt-cmake" -S . -B build-arm64 \
             -DCMAKE_BUILD_TYPE=Release \
             -DQT_ANDROID_MIN_SDK_VERSION=28 \
-            -DQT_ANDROID_TARGET_SDK_VERSION=36
-
+            -DQT_ANDROID_TARGET_SDK_VERSION=36 \
+            -DQT_ANDROID_PACKAGE_NAME="$ANDROID_PACKAGE_NAME"
           cmake --build build-arm64 --parallel
           cmake --build build-arm64 --target apk
 
-      - name: Configure + build (armeabi-v7a)
+      - name: Build (armeabi-v7a)
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           set -euo pipefail
-          QTC="$ARMV7_QT_ROOT/bin/qt-cmake"
-          test -f "$QTC" || { echo "error: $QTC missing" >&2; exit 1; }
-          find "$ARMV7_QT_ROOT/bin" -maxdepth 1 -type f -exec chmod +x {} + 2>/dev/null || true
-
-          sh "$QTC" -S . -B build-armv7 \
+          sh "$ARMV7_QT_ROOT/bin/qt-cmake" -S . -B build-armv7 \
             -DCMAKE_BUILD_TYPE=Release \
             -DQT_ANDROID_MIN_SDK_VERSION=28 \
-            -DQT_ANDROID_TARGET_SDK_VERSION=36
-
+            -DQT_ANDROID_TARGET_SDK_VERSION=36 \
+            -DQT_ANDROID_PACKAGE_NAME="$ANDROID_PACKAGE_NAME"
           cmake --build build-armv7 --parallel
           cmake --build build-armv7 --target apk
 
-      - name: Merge universal APK
+      - name: Merge, align and sign universal APK
         env:
           ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
           ANDROID_KEYSTORE_PWD: ${{ secrets.ANDROID_KEYSTORE_PWD }}
@@ -128,15 +135,15 @@ jobs:
           ROOT="$GITHUB_WORKSPACE"
           cd "$ROOT"
 
-          APK64="$(find build-arm64 -name '*.apk' -not -path '*intermediates*' -not -name '*-signed.apk' -print -quit)"
-          APK32="$(find build-armv7 -name '*.apk' -not -path '*intermediates*' -not -name '*-signed.apk' -print -quit)"
-          test -n "$APK64" || { echo "error: arm64 APK not found" >&2; find build-arm64 -name '*.apk' >&2; exit 1; }
-          test -n "$APK32" || { echo "error: armv7 APK not found" >&2; find build-armv7 -name '*.apk' >&2; exit 1; }
+          APK64="$(find build-arm64 -name '*.apk' -not -path '*intermediates*' -print -quit)"
+          APK32="$(find build-armv7 -name '*.apk' -not -path '*intermediates*' -print -quit)"
+          test -n "$APK64" || { echo "::error::arm64 APK not found"; find build-arm64 -name '*.apk' >&2; exit 1; }
+          test -n "$APK32" || { echo "::error::armv7 APK not found"; find build-armv7 -name '*.apk' >&2; exit 1; }
           echo "arm64 APK: $APK64"
           echo "armv7 APK: $APK32"
 
-          unzip -l "$APK64" | grep -q 'lib/arm64-v8a/'   || { echo "error: arm64 APK lacks lib/arm64-v8a" >&2; exit 1; }
-          unzip -l "$APK32" | grep -q 'lib/armeabi-v7a/' || { echo "error: armv7 APK lacks lib/armeabi-v7a" >&2; exit 1; }
+          unzip -l "$APK64" | grep -q 'lib/arm64-v8a/'   || { echo "::error::arm64 APK lacks lib/arm64-v8a"; exit 1; }
+          unzip -l "$APK32" | grep -q 'lib/armeabi-v7a/' || { echo "::error::armv7 APK lacks lib/armeabi-v7a"; exit 1; }
 
           rm -rf "$ROOT/merge" "$ROOT/dist"
           mkdir -p "$ROOT/merge/base" "$ROOT/merge/other" "$ROOT/merge/merged" "$ROOT/dist"
@@ -158,19 +165,12 @@ jobs:
           cd "$ROOT/merge"
 
           ZIPALIGN="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/36.0.0/zipalign"
-          if "$ZIPALIGN" 2>&1 | grep -q -- '-P '; then
-            "$ZIPALIGN" -f -P 16 4 unaligned.apk aligned.apk
-            "$ZIPALIGN" -c -P 16 4 aligned.apk
-          else
-            "$ZIPALIGN" -f -p 4 unaligned.apk aligned.apk
-            "$ZIPALIGN" -c -p 4 aligned.apk
-          fi
-
-          unzip -l aligned.apk | grep -q 'lib/arm64-v8a/'   || { echo "error: universal APK lacks arm64-v8a" >&2; exit 1; }
-          unzip -l aligned.apk | grep -q 'lib/armeabi-v7a/' || { echo "error: universal APK lacks armeabi-v7a" >&2; exit 1; }
+          "$ZIPALIGN" -f -P 16 4 unaligned.apk aligned.apk
+          "$ZIPALIGN" -c -P 16 4 aligned.apk
 
           OUT="$ROOT/dist/firebird-emu-universal.apk"
           APKSIGNER="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner"
+
           if [ -n "${ANDROID_KEYSTORE_PWD:-}" ]; then
             echo "$ANDROID_KEYSTORE" | base64 -d > "$ROOT/keystore.jks"
             "$APKSIGNER" sign \
@@ -179,14 +179,32 @@ jobs:
               --ks-pass "pass:${ANDROID_KEYSTORE_PWD}" \
               --key-pass "pass:${ANDROID_KEYSTORE_PWD}" \
               --out "$OUT" aligned.apk
-            "$APKSIGNER" verify --print-certs "$OUT"
           else
-            echo "No signing key configured, leaving the universal APK unsigned."
-            cp aligned.apk "$OUT"
+            echo "::warning::No release keystore available (fork PR?); signing with the debug key. Uninstall any release-signed copy of $ANDROID_PACKAGE_NAME before installing this one."
+            keytool -genkeypair -keystore "$ROOT/debug.keystore" \
+              -storepass android -keypass android \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+            "$APKSIGNER" sign \
+              --ks "$ROOT/debug.keystore" --ks-key-alias androiddebugkey \
+              --ks-pass pass:android --key-pass pass:android \
+              --out "$OUT" aligned.apk
           fi
 
-          echo "Universal APK native libraries:"
-          unzip -l "$OUT" | grep 'lib/'
+          "$APKSIGNER" verify --print-certs "$OUT"
+
+          AAPT2="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/36.0.0/aapt2"
+          echo "--- badging ---"
+          "$AAPT2" dump badging "$OUT" | grep -E "^(package|native-code|sdkVersion|targetSdkVersion):" || true
+
+          GOT_PKG="$("$AAPT2" dump badging "$OUT" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n1)"
+          test "$GOT_PKG" = "$ANDROID_PACKAGE_NAME" || {
+            echo "::error::APK package is '$GOT_PKG', expected '$ANDROID_PACKAGE_NAME'"
+            exit 1
+          }
+          NATIVE="$("$AAPT2" dump badging "$OUT" | sed -n "s/^native-code: \(.*\)/\1/p")"
+          echo "$NATIVE" | grep -q "arm64-v8a"   || { echo "::error::universal APK lacks arm64-v8a"; exit 1; }
+          echo "$NATIVE" | grep -q "armeabi-v7a" || { echo "::error::universal APK lacks armeabi-v7a"; exit 1; }
 
       - name: Upload universal APK
         uses: actions/upload-artifact@v7
