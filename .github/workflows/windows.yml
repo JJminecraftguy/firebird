@@ -127,19 +127,32 @@ jobs:
     - name: Configure (CMake)
       shell: pwsh
       run: |
-        $msysPrefix = Split-Path -Parent $env:MSYS_BIN
-        Write-Host "MSYS2 prefix: $msysPrefix"
-        if (-not (Test-Path "$msysPrefix\include\zlib.h")) {
-          throw "zlib.h not found under $msysPrefix; the mingw-w64-${{ matrix.msys_pkg }}-zlib package should have installed it"
+        $cmakeArgs = @(
+          "-S", ".", "-B", "build",
+          "-G", "MinGW Makefiles",
+          "-DCMAKE_BUILD_TYPE=Release",
+          "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR"
+        )
+        
+        if ("${{ matrix.arch }}" -eq "win32") {
+          # The self-built 32-bit Qt links the MSYS2 mingw32 zlib dynamically.
+          $msysPrefix = Split-Path -Parent $env:MSYS_BIN
+          if (-not (Test-Path "$msysPrefix\include\zlib.h")) {
+            throw "zlib.h not found under $msysPrefix; the mingw-w64-${{ matrix.msys_pkg }}-zlib package should have installed it"
+          }
+          $cmakeArgs += "-DZLIB_ROOT=$msysPrefix"
+        } else {
+          $qtMingwSysroot = Join-Path $env:QT_ROOT_DIR "..\..\Tools\mingw1310_64\x86_64-w64-mingw32"
+          $qtMingwSysroot = [System.IO.Path]::GetFullPath($qtMingwSysroot)
+          Write-Host "Qt bundled MinGW sysroot: $qtMingwSysroot"
+          if (-not (Test-Path "$qtMingwSysroot\include\zlib.h")) {
+            throw "zlib.h not found under $qtMingwSysroot; Qt's bundled MinGW should provide it"
+          }
+          $cmakeArgs += "-DZLIB_ROOT=$qtMingwSysroot"
         }
 
-        cmake -S . -B build `
-          -G "MinGW Makefiles" `
-          -DCMAKE_BUILD_TYPE=Release `
-          -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" `
-          -DZLIB_ROOT="$msysPrefix"
+        cmake @cmakeArgs
         if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
-
     - name: Build firebird-emu
       shell: pwsh
       run: |
