@@ -127,14 +127,17 @@ jobs:
     - name: Configure (CMake)
       shell: pwsh
       run: |
-        # Qt 6.12's CMake package config lives under <prefix>/lib/cmake/Qt6;
-        # pointing CMAKE_PREFIX_PATH at the kit root is the cross-platform way
-        # to make find_package(Qt6) succeed. Same works for the official
-        # win64_mingw kit and the self-built mingw_x32 kit.
+        $msysPrefix = Split-Path -Parent $env:MSYS_BIN
+        Write-Host "MSYS2 prefix: $msysPrefix"
+        if (-not (Test-Path "$msysPrefix\include\zlib.h")) {
+          throw "zlib.h not found under $msysPrefix; the mingw-w64-${{ matrix.msys_pkg }}-zlib package should have installed it"
+        }
+
         cmake -S . -B build `
           -G "MinGW Makefiles" `
           -DCMAKE_BUILD_TYPE=Release `
-          -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+          -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" `
+          -DZLIB_ROOT="$msysPrefix"
         if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
     - name: Build firebird-emu
