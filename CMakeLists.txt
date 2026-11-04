@@ -369,7 +369,25 @@ else()
     target_link_libraries(firebird-emu PRIVATE ZLIB::ZLIB)
 endif()
 
-if(NOT WIN32 AND NOT (
+# LTO is broken on Android armeabi-v7a. Upstream Firebird documents this
+# explicitly: Qt adds -Oz by default on 32-bit ARM, which breaks LTO with
+# the NDK, and even when that is worked around the resulting binary has
+# random crashes. The linker errors confirm it: R_ARM_ABS32 relocations
+# against symbols in lto.tmp, which Android refuses to load because text
+# relocations are banned on API 23+. Disable LTO only for this one
+# configuration; everything else keeps it exactly as before.
+if(ANDROID AND FB_ARCH STREQUAL "arm")
+    message(STATUS "Disabling LTO on Android armeabi-v7a (broken upstream)")
+    set(FB_ENABLE_LTO OFF)
+else()
+    set(FB_ENABLE_LTO ON)
+endif()
+
+# Original .pro condition, kept verbatim apart from the FB_ENABLE_LTO gate:
+#   !clang | !if(linux|freebsd|wasm): !win32: CONFIG += ltcg
+if(FB_ENABLE_LTO
+   AND NOT WIN32
+   AND NOT (
         CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND (
             CMAKE_SYSTEM_NAME STREQUAL "Linux" OR
             CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR
