@@ -112,19 +112,37 @@ jobs:
       # extractNativeLibs=true, exactly as the qmake legacy workflow did.
       # These seds touch the source files; androiddeployqt copies them into
       # build-all/android-build/ during the apk target.
-      - name: Adapt Gradle wrapper and manifest for ${{ matrix.label }}
+      - name: Adapt Gradle wrapper, manifest, and compile SDK for ${{ matrix.label }}
         run: |
           set -euo pipefail
+
           sed -i "s|gradle-9.5.1|gradle-${{ matrix.gradle }}|" \
             android/gradle/wrapper/gradle-wrapper.properties
+
           sed -i 's/android:extractNativeLibs="false"/android:extractNativeLibs="true"/' \
             android/AndroidManifest.xml
+
+          # The AGP bundled with Qt 6.4/6.7 (7.4.1) cannot parse the runner's
+          # android-36-ext19 preview jar. Force compileSdkVersion to the
+          # matching platform from the matrix so the old AGP links against a
+          # jar it understands.
+          if grep -q 'compileSdkVersion' android/build.gradle; then
+            sed -i -E "s|compileSdkVersion[[:space:]]+.*|compileSdkVersion ${{ matrix.sdk_platform_num }}|" \
+              android/build.gradle
+            echo "--- compileSdkVersion ---"
+            grep 'compileSdkVersion' android/build.gradle
+          else
+            echo "::warning::android/build.gradle has no compileSdkVersion line; leaving it alone"
+          fi
+
+          # Belt and braces: force aapt2 from the matching build-tools.
+          echo "android.aapt2FromMavenOverride=$ANDROID_HOME/build-tools/${{ matrix.build_tools }}/aapt2" \
+            >> android/gradle.properties
 
           echo "--- gradle wrapper ---"
           grep distributionUrl android/gradle/wrapper/gradle-wrapper.properties
           echo "--- extractNativeLibs ---"
           grep -o 'extractNativeLibs="[^"]*"' android/AndroidManifest.xml
-
       # Single configure with QT_ANDROID_BUILD_ALL_ABIS=ON. Qt detects the
       # sibling arm64/armv7 installs under $QT_ROOT_DIR/.. and drives one
       # androiddeployqt per ABI, letting Gradle assemble a single universal
