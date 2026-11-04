@@ -12,12 +12,9 @@ concurrency:
   group: android-modern-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  ANDROID_PACKAGE_NAME: ''
-
 jobs:
   build:
-    name: build
+    name: build · universal
     runs-on: ubuntu-24.04
 
     steps:
@@ -47,20 +44,6 @@ jobs:
         with:
           ndk-version: r27c
           add-to-path: false
-
-      - name: Resolve package name
-        run: |
-          set -euo pipefail
-          PKG="${ANDROID_PACKAGE_NAME:-}"
-          if [ -z "$PKG" ] && [ -f android/AndroidManifest.xml ]; then
-            PKG="$(grep -oP 'package="\K[^"]+' android/AndroidManifest.xml | head -n1 || true)"
-          fi
-          if [ -z "$PKG" ]; then
-            echo "::error::could not determine the Android package name; set ANDROID_PACKAGE_NAME"
-            exit 1
-          fi
-          echo "ANDROID_PACKAGE_NAME=$PKG" >> "$GITHUB_ENV"
-          echo "Using package name: $PKG"
 
       - name: Install Qt 6.12.0 (arm64-v8a)
         uses: jurplel/install-qt-action@v4
@@ -92,6 +75,9 @@ jobs:
           echo "ARMV7_QT_ROOT=$QT_ROOT_DIR" >> "$GITHUB_ENV"
           find "$QT_ROOT_DIR/bin" -maxdepth 1 -type f -exec chmod +x {} + 2>/dev/null || true
 
+      # Single configure with QT_ANDROID_BUILD_ALL_ABIS=ON. Qt drives one
+      # androiddeployqt invocation per ABI and Gradle assembles a single APK
+      # containing both lib/arm64-v8a/ and lib/armeabi-v7a/. No manual merge.
       - name: Configure and build (all ABIs)
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
@@ -103,6 +89,58 @@ jobs:
             -DQT_ANDROID_BUILD_ALL_ABIS=ON
           cmake --build build-all --parallel
           cmake --build build-all --target apk
+
+      - name: Sign APK
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PWD: ${{ secrets.ANDROID_KEYSTORE_PWD }}
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE"
+          cd "$ROOT"
+          mkdir -p "$ROOT/dist"
+
+          APK_IN="$(find build-all/android-build/build/outputs/apk/release \
+                       -name '*.apk' -not -name '*-signed.apk' -print -quit)"
+          test -n "$APK_IN" || {
+            echo "::error::APK not found under build-all/android-build/build/outputs/apk/release"
+            find build-all -name '*.apk' >&2
+            exit 1
+          }
+          echo "Found APK: $APK_IN"
+
+          OUT="$ROOT/dist/firebird-emu-universal.apk"
+          APKSIGNER="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner"
+
+          if [ -n "${ANDROID_KEYSTORE_PWD:-}" ]; then
+            echo "$ANDROID_KEYSTORE" | base64 -d > "$ROOT/keystore.jks"
+            "$APKSIGNER" sign \
+              --ks "$ROOT/keystore.jks" \
+              --ks-key-alias firebirdemugh \
+              --ks-pass "pass:${ANDROID_KEYSTORE_PWD}" \
+              --key-pass "pass:${ANDROID_KEYSTORE_PWD}" \
+              --out "$OUT" "$APK_IN"
+          else
+            echo "::warning::No release keystore available (fork PR?); signing with the debug key."
+            keytool -genkeypair -keystore "$ROOT/debug.keystore" \
+              -storepass android -keypass android \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+            "$APKSIGNER" sign \
+              --ks "$ROOT/debug.keystore" --ks-key-alias androiddebugkey \
+              --ks-pass pass:android --key-pass pass:android \
+              --out "$OUT" "$APK_IN"
+          fi
+
+          "$APKSIGNER" verify --print-certs "$OUT"
+
+          AAPT2="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/36.0.0/aapt2"
+          echo "--- badging ---"
+          "$AAPT2" dump badging "$OUT" | grep -E "^(package|native-code|sdkVersion|targetSdkVersion):" || true
+
+          NATIVE="$("$AAPT2" dump badging "$OUT" | sed -n "s/^native-code: \(.*\)/\1/p")"
+          echo "$NATIVE" | grep -q "arm64-v8a"   || { echo "::error::APK lacks arm64-v8a"; exit 1; }
+          echo "$NATIVE" | grep -q "armeabi-v7a" || { echo "::error::APK lacks armeabi-v7a"; exit 1; }
 
       - name: Upload universal APK
         uses: actions/upload-artifact@v7
