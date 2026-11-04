@@ -106,10 +106,7 @@ jobs:
         run: |
           set -euo pipefail
           sh "$ARM64_QT_ROOT/bin/qt-cmake" -S . -B build-arm64 \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DQT_ANDROID_MIN_SDK_VERSION=28 \
-            -DQT_ANDROID_TARGET_SDK_VERSION=36 \
-            -DQT_ANDROID_PACKAGE_NAME="$ANDROID_PACKAGE_NAME"
+            -DCMAKE_BUILD_TYPE=Release
           cmake --build build-arm64 --parallel
           cmake --build build-arm64 --target apk
 
@@ -120,10 +117,7 @@ jobs:
         run: |
           set -euo pipefail
           sh "$ARMV7_QT_ROOT/bin/qt-cmake" -S . -B build-armv7 \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DQT_ANDROID_MIN_SDK_VERSION=28 \
-            -DQT_ANDROID_TARGET_SDK_VERSION=36 \
-            -DQT_ANDROID_PACKAGE_NAME="$ANDROID_PACKAGE_NAME"
+            -DCMAKE_BUILD_TYPE=Release
           cmake --build build-armv7 --parallel
           cmake --build build-armv7 --target apk
 
