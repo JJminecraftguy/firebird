@@ -86,12 +86,10 @@ else()
     set(FB_ARCH "${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
-# arm64, arm64-v8a
 if(FB_ARCH MATCHES "^arm64")
     set(FB_ARCH "aarch64")
 endif()
 
-# armv7l, armeabi-v7a
 if(FB_ARCH MATCHES "^arm")
     set(FB_ARCH "arm")
 endif()
@@ -378,7 +376,6 @@ endif()
 
 if(FB_ARCH STREQUAL "arm")
     if(ANDROID)
-        # NDK already targets armv7-a; only the instruction set needs forcing.
         target_compile_options(firebird-emu PRIVATE -marm)
     else()
         target_compile_options(firebird-emu PRIVATE -march=armv7-a -marm)
@@ -428,14 +425,19 @@ set(FB_IDE_ONLY
     emscripten/main.cpp
 )
 list(TRANSFORM FB_IDE_ONLY PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/")
-foreach(_fb_compiled IN LISTS ASMCODE_IMPL)
+
+set(FB_JIT_COMPILED_FILES "")
+if(TRANSLATION_ENABLED STREQUAL "true")
+    list(APPEND FB_JIT_COMPILED_FILES ${TRANSLATE})
+endif()
+foreach(_fb_compiled IN LISTS ASMCODE_IMPL FB_JIT_COMPILED_FILES)
+    get_filename_component(_fb_compiled "${_fb_compiled}"
+        ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
     list(REMOVE_ITEM FB_IDE_ONLY "${_fb_compiled}")
 endforeach()
-if(TRANSLATION_ENABLED STREQUAL "true")
-    foreach(_fb_compiled IN LISTS TRANSLATE)
-        list(REMOVE_ITEM FB_IDE_ONLY "${_fb_compiled}")
-    endforeach()
-endif()
+unset(_fb_compiled)
+unset(FB_JIT_COMPILED_FILES)
+
 target_sources(firebird-emu PRIVATE ${FB_IDE_ONLY})
 set_source_files_properties(${FB_IDE_ONLY} PROPERTIES HEADER_FILE_ONLY TRUE)
 
