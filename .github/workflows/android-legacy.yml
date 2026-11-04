@@ -137,7 +137,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DQT_ANDROID_BUILD_ALL_ABIS=ON \
             -DQT_ANDROID_MIN_SDK_VERSION=${{ matrix.min_sdk }} \
-            -DQT_ANDROID_TARGET_SDK_VERSION=${{ matrix.target_sdk }}
+            -DQT_ANDROID_TARGET_SDK_VERSION=${{ matrix.target_sdk }} \
+            -DQT_ANDROID_COMPILE_SDK_VERSION=${{ matrix.sdk_platform_num }}
           cmake --build build-all --parallel
           cmake --build build-all --target apk
 
