@@ -28,7 +28,7 @@ jobs:
             qt_version: '6.12.0'
             pe_format: 'pei-x86-64'
           # 32-bit: Qt doesn't provide 32-bit binaries for Qt 6, so a self-built
-          # Qt 6.10.3 is used (qt/qt-6.10.3-win32.zip). It was built with the
+          # Qt 6.12.0 is used (qt/qt-6.12.0-win32.zip). It was built with the
           # MSYS2 MINGW32 toolchain, so that has to be used here as well.
           - arch: win32
             msystem: MINGW32
@@ -56,9 +56,6 @@ jobs:
     - name: Install runtime libraries of the Qt kit (MSYS2)
       if: matrix.arch == 'win32'
       shell: msys2 {0}
-      # The self-built Qt links these dynamically. They are shipped with the
-      # application below. Not fatal here, a missing one is reported by the
-      # deployment step with a clear error message.
       run: |
         pacman -S --needed --noconfirm \
           mingw-w64-${{ matrix.msys_pkg }}-pcre2 \
@@ -98,10 +95,16 @@ jobs:
         New-Item -ItemType Directory -Force $qt | Out-Null
         7z x $zip "-o$qt" -y | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Extracting $zip failed (is the archive complete?)" }
-        foreach ($f in @("bin\qmake.exe", "bin\windeployqt.exe", "lib\libQt6Core.a", "plugins\platforms\qwindows.dll")) {
+        foreach ($f in @(
+            "bin\qmake.exe",
+            "bin\windeployqt.exe",
+            "lib\libQt6Core.a",
+            "plugins\platforms\qwindows.dll",
+            "lib\cmake\Qt6\Qt6Config.cmake")) {
           if (-not (Test-Path "$qt\$f")) { throw "Qt kit is incomplete, $f is missing" }
         }
-        # The kit has no qt.conf, make qmake locate everything relative to itself
+        # qt.conf is only used by qmake queries in the deploy step; CMake
+        # locates the kit via CMAKE_PREFIX_PATH and doesn't read qt.conf.
         Set-Content -Path "$qt\bin\qt.conf" -Value "[Paths]`nPrefix=.."
         "$qt\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
         "QT_ROOT_DIR=$qt" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -110,28 +113,40 @@ jobs:
       shell: pwsh
       run: |
         g++ --version | Select-Object -First 1
+        cmake --version | Select-Object -First 1
         qmake -v
         $v = (qmake -query QT_VERSION).Trim()
         if ($v -ne "${{ matrix.qt_version }}") { throw "Expected Qt ${{ matrix.qt_version }}, but qmake is $v" }
         $prefix = (qmake -query QT_INSTALL_PREFIX).Trim()
         Write-Host "Qt prefix: $prefix"
         if (-not (Test-Path "$prefix\bin\Qt6Core.dll")) { throw "qmake's prefix $prefix doesn't contain Qt" }
+        if (-not (Test-Path "$prefix\lib\cmake\Qt6\Qt6Config.cmake")) {
+          throw "Qt prefix $prefix has no CMake package config"
+        }
+
+    - name: Configure (CMake)
+      shell: pwsh
+      run: |
+        # Qt 6.12's CMake package config lives under <prefix>/lib/cmake/Qt6;
+        # pointing CMAKE_PREFIX_PATH at the kit root is the cross-platform way
+        # to make find_package(Qt6) succeed. Same works for the official
+        # win64_mingw kit and the self-built mingw_x32 kit.
+        cmake -S . -B build `
+          -G "MinGW Makefiles" `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+        if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
     - name: Build firebird-emu
       shell: pwsh
       run: |
-        mkdir build
-        cd build
-        qmake ..\firebird.pro CONFIG+=release CONFIG-=debug_and_release
-        if ($LASTEXITCODE -ne 0) { throw "qmake failed" }
-        mingw32-make -j4
+        cmake --build build --parallel 4
         if ($LASTEXITCODE -ne 0) { throw "make failed" }
 
     - name: Deploy Qt and runtime libraries
       shell: pwsh
       run: |
-        cd build
-        $exe = Get-ChildItem -Recurse -Filter firebird-emu.exe | Select-Object -First 1
+        $exe = Get-ChildItem -Path build -Recurse -Filter firebird-emu.exe | Select-Object -First 1
         if (-not $exe) { throw "firebird-emu.exe was not built" }
 
         # Make sure the executable has the right architecture, the JIT depends on it
@@ -139,11 +154,11 @@ jobs:
         Write-Host $fmt
         if ($fmt -notmatch "${{ matrix.pe_format }}") { throw "Wrong architecture, expected ${{ matrix.pe_format }}" }
 
-        $dist = "firebird-emu"
+        $dist = "build\firebird-emu"
         New-Item -ItemType Directory $dist | Out-Null
         Copy-Item $exe.FullName $dist\
 
-        windeployqt --qmldir=..\qml "$dist\firebird-emu.exe"
+        windeployqt --qmldir=qml "$dist\firebird-emu.exe"
         if ($LASTEXITCODE -ne 0) { throw "windeployqt failed" }
 
         # QML modules that are only imported by other QML modules (e.g. by
