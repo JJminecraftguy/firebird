@@ -35,21 +35,35 @@ jobs:
           arch: clang_64
           cache: true
 
-    - name: Build firebird-emu Qt on macOS
+    - name: Build firebird-emu (${{ matrix.arch }}) with CMake
       run: |
-        set -e
-        qmake -v
-        mkdir build
-        cd build
-        qmake ../firebird.pro CONFIG+=release QMAKE_APPLE_DEVICE_ARCHS=${{ matrix.arch }}
-        make -j"$(sysctl -n hw.ncpu)"
+        set -eux
+
+        QTC="$QT_ROOT_DIR/bin/qt-cmake"
+        test -f "$QTC" || { echo "error: $QTC missing" >&2; ls -la "$QT_ROOT_DIR/bin" >&2; exit 1; }
+        # Defensive: cached Qt trees occasionally come back without the exec
+        # bit. Repair it, then invoke via sh so a missing bit can never fail
+        # the step again.
+        find "$QT_ROOT_DIR/bin" -maxdepth 1 -type f -exec chmod +x {} + 2>/dev/null || true
+
+        "$QT_ROOT_DIR/bin/qmake" -v
+
+        # CMAKE_OSX_ARCHITECTURES pins the single architecture the JIT needs,
+        # replacing the .pro's QMAKE_APPLE_DEVICE_ARCHS. CMakeLists.txt
+        # enforces exactly one arch and errors out otherwise, mirroring the
+        # .pro's !count(QMAKE_APPLE_DEVICE_ARCHS, 1) check.
+        sh "$QTC" -S . -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }}
+        cmake --build build --parallel
 
         # Make sure the JIT matches the architecture the binary was built for
-        lipo -archs firebird-emu.app/Contents/MacOS/firebird-emu | tee /dev/stderr | grep -qx "${{ matrix.arch }}"
+        lipo -archs build/firebird-emu.app/Contents/MacOS/firebird-emu \
+          | tee /dev/stderr | grep -qx "${{ matrix.arch }}"
 
-        macdeployqt firebird-emu.app -qmldir=../qml
+        macdeployqt build/firebird-emu.app -qmldir=qml
         mkdir -p /tmp/firebird-emu_macOS/
-        mv firebird-emu.app /tmp/firebird-emu_macOS/
+        mv build/firebird-emu.app /tmp/firebird-emu_macOS/
 
         # macdeployqt changes the binaries, which invalidates their signatures. Apple Silicon
         # refuses to run unsigned code, so sign ad-hoc. This is replaced by the real
