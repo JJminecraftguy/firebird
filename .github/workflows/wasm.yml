@@ -36,21 +36,55 @@ jobs:
           aqtsource: 'git+https://github.com/miurahr/aqtinstall.git'
           cache: true
 
+      - name: Verify Qt and CMake
+        run: |
+          set -eux
+          test -f "$QT_ROOT_DIR/bin/qt-cmake"
+          "$QT_ROOT_DIR/bin/qt-cmake" --version
+          cmake --version
+
+      # qt-cmake picks up Qt's wasm toolchain (qt.toolchain.cmake) from the
+      # installed Qt automatically, including the emscripten setup. No
+      # -DCMAKE_TOOLCHAIN_FILE or -DQT_HOST_PATH flags are needed.
+      - name: Configure (CMake)
+        run: |
+          set -eux
+          "$QT_ROOT_DIR/bin/qt-cmake" -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release
+
       - name: Build
         run: |
-          mkdir build
-          cd build
-          qmake ..
-          make -j$(nproc)
+          set -eux
+          cmake --build build --parallel
+
+      - name: Verify build outputs
+        run: |
+          set -eux
+          echo "=== build directory ==="
+          ls -la build/
+          echo "=== wasm outputs ==="
+          ls -la build/*.html build/*.js build/*.wasm build/*.svg 2>&1 || true
+
+          test -f build/firebird-emu.html
+          test -f build/firebird-emu.js
+          test -f build/firebird-emu.wasm
+          test -f build/qtloader.js
+
+      - name: Prepare artifact
+        run: |
+          set -eux
+          mkdir -p artifacts
+          cp build/firebird-emu.html artifacts/
+          cp build/firebird-emu.js artifacts/
+          cp build/firebird-emu.wasm artifacts/
+          cp build/qtloader.js artifacts/
+          # Optional cosmetic asset; older Qt versions include it, some newer
+          # ones don't. Don't fail the build if it's absent.
+          cp build/qtlogo.svg artifacts/ 2>/dev/null || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: firebird-emu-wasm
-          path: |
-            build/firebird-emu.html
-            build/firebird-emu.js
-            build/firebird-emu.wasm
-            build/qtloader.js
-            build/qtlogo.svg
+          path: artifacts/
           if-no-files-found: error
