@@ -45,9 +45,6 @@ jobs:
           ndk-version: r27c
           add-to-path: false
 
-      # Two installs, one arch each, into the same QT_ROOT_DIR.
-      # aqt 3.3.0 (pinned by this action) only resolves Qt 6.12's per-ABI
-      # repositories when a single arch is requested per call.
       - name: Install Qt 6.12.0 (arm64-v8a)
         uses: jurplel/install-qt-action@v4
         with:
@@ -56,6 +53,16 @@ jobs:
           target: 'android'
           arch: 'android_arm64_v8a'
           cache: true
+
+      - name: Capture arm64 Qt root
+        run: |
+          set -euo pipefail
+          echo "ARM64_QT_ROOT=$QT_ROOT_DIR" >> "$GITHUB_ENV"
+          test -f "$QT_ROOT_DIR/bin/qt-cmake" || {
+            echo "error: $QT_ROOT_DIR/bin/qt-cmake missing" >&2
+            ls -la "$QT_ROOT_DIR/bin" >&2 || true
+            exit 1
+          }
 
       - name: Install Qt 6.12.0 (armeabi-v7a)
         uses: jurplel/install-qt-action@v4
@@ -66,16 +73,25 @@ jobs:
           arch: 'android_armv7'
           cache: true
 
+      - name: Capture armv7 Qt root
+        run: |
+          set -euo pipefail
+          echo "ARMV7_QT_ROOT=$QT_ROOT_DIR" >> "$GITHUB_ENV"
+          test -f "$QT_ROOT_DIR/bin/qt-cmake" || {
+            echo "error: $QT_ROOT_DIR/bin/qt-cmake missing" >&2
+            ls -la "$QT_ROOT_DIR/bin" >&2 || true
+            exit 1
+          }
+
       - name: Configure + build (arm64-v8a)
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           set -euo pipefail
-          QTC="$(find "$QT_ROOT_DIR" -maxdepth 3 -path '*/android_arm64_v8a/bin/qt-cmake' | head -1)"
-          test -n "$QTC" || { echo "error: qt-cmake (arm64) not found" >&2; exit 1; }
-          # Repair exec bits in case the cache restored them wrong, then invoke via sh.
-          find "$(dirname "$QTC")" -maxdepth 1 -type f -exec chmod +x {} + 2>/dev/null || true
+          QTC="$ARM64_QT_ROOT/bin/qt-cmake"
+          test -f "$QTC" || { echo "error: $QTC missing" >&2; exit 1; }
+          find "$ARM64_QT_ROOT/bin" -maxdepth 1 -type f -exec chmod +x {} + 2>/dev/null || true
 
           sh "$QTC" -S . -B build-arm64 \
             -DCMAKE_BUILD_TYPE=Release \
@@ -91,9 +107,9 @@ jobs:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           set -euo pipefail
-          QTC="$(find "$QT_ROOT_DIR" -maxdepth 3 -path '*/android_armv7/bin/qt-cmake' | head -1)"
-          test -n "$QTC" || { echo "error: qt-cmake (armv7) not found" >&2; exit 1; }
-          find "$(dirname "$QTC")" -maxdepth 1 -type f -exec chmod +x {} + 2>/dev/null || true
+          QTC="$ARMV7_QT_ROOT/bin/qt-cmake"
+          test -f "$QTC" || { echo "error: $QTC missing" >&2; exit 1; }
+          find "$ARMV7_QT_ROOT/bin" -maxdepth 1 -type f -exec chmod +x {} + 2>/dev/null || true
 
           sh "$QTC" -S . -B build-armv7 \
             -DCMAKE_BUILD_TYPE=Release \
@@ -103,9 +119,6 @@ jobs:
           cmake --build build-armv7 --parallel
           cmake --build build-armv7 --target apk
 
-      # Merge the two per-ABI APKs into one universal APK.
-      # They differ only in lib/<abi>/ (same manifest, resources, dex), so
-      # adding the 32-bit libs to the 64-bit APK and re-signing is valid.
       - name: Merge universal APK
         env:
           ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
