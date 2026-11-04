@@ -28,6 +28,7 @@ jobs:
             gradle: '7.4.2'
             jdk: '17'
             sdk_platform: 'android-31'
+            sdk_platform_num: 31
             build_tools: '31.0.0'
             deploy_platform: 'android-31'
             label: 'android6-7'
@@ -41,6 +42,7 @@ jobs:
             gradle: '8.3'
             jdk: '17'
             sdk_platform: 'android-34'
+            sdk_platform_num: 34
             build_tools: '34.0.0'
             deploy_platform: 'android-34'
             label: 'android8'
