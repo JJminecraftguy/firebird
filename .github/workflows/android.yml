@@ -125,36 +125,40 @@ jobs:
           ANDROID_KEYSTORE_PWD: ${{ secrets.ANDROID_KEYSTORE_PWD }}
         run: |
           set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE"
+          cd "$ROOT"
 
-          APK64="$(find build-arm64 -name 'firebird-emu*.apk' -not -name '*-signed.apk' -print -quit)"
-          APK32="$(find build-armv7 -name 'firebird-emu*.apk' -not -name '*-signed.apk' -print -quit)"
-          test -n "$APK64" || { echo "error: arm64 APK not found" >&2; exit 1; }
-          test -n "$APK32" || { echo "error: armv7 APK not found" >&2; exit 1; }
+          APK64="$(find build-arm64 -name '*.apk' -not -path '*intermediates*' -not -name '*-signed.apk' -print -quit)"
+          APK32="$(find build-armv7 -name '*.apk' -not -path '*intermediates*' -not -name '*-signed.apk' -print -quit)"
+          test -n "$APK64" || { echo "error: arm64 APK not found" >&2; find build-arm64 -name '*.apk' >&2; exit 1; }
+          test -n "$APK32" || { echo "error: armv7 APK not found" >&2; find build-armv7 -name '*.apk' >&2; exit 1; }
+          echo "arm64 APK: $APK64"
+          echo "armv7 APK: $APK32"
 
           unzip -l "$APK64" | grep -q 'lib/arm64-v8a/'   || { echo "error: arm64 APK lacks lib/arm64-v8a" >&2; exit 1; }
           unzip -l "$APK32" | grep -q 'lib/armeabi-v7a/' || { echo "error: armv7 APK lacks lib/armeabi-v7a" >&2; exit 1; }
 
-          rm -rf merge dist && mkdir -p merge/base merge/other merge/merged dist
+          rm -rf "$ROOT/merge" "$ROOT/dist"
+          mkdir -p "$ROOT/merge/base" "$ROOT/merge/other" "$ROOT/merge/merged" "$ROOT/dist"
 
-          unzip -q "$APK64" -d merge/base
-          unzip -q "$APK32" -d merge/other
+          unzip -q "$APK64" -d "$ROOT/merge/base"
+          unzip -q "$APK32" -d "$ROOT/merge/other"
 
-          cp -a merge/base/. merge/merged/
-          mkdir -p merge/merged/lib
-          rm -rf merge/merged/lib/armeabi-v7a
-          cp -a merge/other/lib/armeabi-v7a merge/merged/lib/
-          rm -rf merge/merged/META-INF
+          cp -a "$ROOT/merge/base/." "$ROOT/merge/merged/"
+          mkdir -p "$ROOT/merge/merged/lib"
+          rm -rf "$ROOT/merge/merged/lib/armeabi-v7a"
+          cp -a "$ROOT/merge/other/lib/armeabi-v7a" "$ROOT/merge/merged/lib/"
+          rm -rf "$ROOT/merge/merged/META-INF"
 
-          cd merge/merged
+          cd "$ROOT/merge/merged"
           zip -qr ../unaligned.apk . \
             -x 'resources.arsc' 'lib/arm64-v8a/*.so' 'lib/armeabi-v7a/*.so'
           zip -q -0 ../unaligned.apk resources.arsc
           zip -q -0 ../unaligned.apk lib/arm64-v8a/*.so lib/armeabi-v7a/*.so
-          cd ..
+          cd "$ROOT/merge"
 
           ZIPALIGN="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/36.0.0/zipalign"
           if "$ZIPALIGN" 2>&1 | grep -q -- '-P '; then
-            # -P replaces -p; they cannot be combined.
             "$ZIPALIGN" -f -P 16 4 unaligned.apk aligned.apk
             "$ZIPALIGN" -c -P 16 4 aligned.apk
           else
@@ -165,12 +169,12 @@ jobs:
           unzip -l aligned.apk | grep -q 'lib/arm64-v8a/'   || { echo "error: universal APK lacks arm64-v8a" >&2; exit 1; }
           unzip -l aligned.apk | grep -q 'lib/armeabi-v7a/' || { echo "error: universal APK lacks armeabi-v7a" >&2; exit 1; }
 
+          OUT="$ROOT/dist/firebird-emu-universal.apk"
           APKSIGNER="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner"
-          OUT=dist/firebird-emu-universal.apk
           if [ -n "${ANDROID_KEYSTORE_PWD:-}" ]; then
-            echo "$ANDROID_KEYSTORE" | base64 -d > keystore.jks
+            echo "$ANDROID_KEYSTORE" | base64 -d > "$ROOT/keystore.jks"
             "$APKSIGNER" sign \
-              --ks keystore.jks \
+              --ks "$ROOT/keystore.jks" \
               --ks-key-alias firebirdemugh \
               --ks-pass "pass:${ANDROID_KEYSTORE_PWD}" \
               --key-pass "pass:${ANDROID_KEYSTORE_PWD}" \
