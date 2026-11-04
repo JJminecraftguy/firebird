@@ -44,6 +44,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
+            cmake \
             zlib1g-dev \
             binutils \
             libgl1-mesa-dev
@@ -56,30 +57,37 @@ jobs:
           target: desktop
           arch: ${{ matrix.qt_arch }}
 
-      - name: Verify Qt version
+      - name: Verify Qt and CMake
         run: |
+          set -eux
           qmake6 -v
           test "$(qmake6 -query QT_VERSION)" = "6.12.0"
+          cmake --version
+          "$QT_ROOT_DIR/bin/qt-cmake" --version
 
-      - name: Configure GUI application
+      - name: Configure GUI application (CMake)
         run: |
-          qmake6 firebird.pro CONFIG+=release
+          set -eux
+          "$QT_ROOT_DIR/bin/qt-cmake" -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release
 
       - name: Build GUI application
         run: |
-          make -j"$(nproc)"
+          set -eux
+          cmake --build build --parallel
 
       - name: Verify executable
         run: |
           set -eux
-          test -f firebird-emu
-          file firebird-emu
-          chmod +x firebird-emu
+          test -f build/firebird-emu
+          file build/firebird-emu
+          chmod +x build/firebird-emu
 
       - name: Prepare artifact
         run: |
+          set -eux
           mkdir -p artifacts
-          cp firebird-emu artifacts/
+          cp build/firebird-emu artifacts/
           cp resources/org.firebird-emus.firebird-emu.png artifacts/ 2>/dev/null || true
           printf 'Architecture: %s\n' '${{ matrix.arch }}' > artifacts/BUILD-INFO.txt
           printf 'Qt: 6.12.0\n' >> artifacts/BUILD-INFO.txt
