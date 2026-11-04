@@ -323,20 +323,6 @@ if(ANDROID)
     )
 endif()
 
-if(ANDROID)
-    set_target_properties(firebird-emu PROPERTIES
-        QT_ANDROID_DEPLOYMENT_DEPENDENCIES
-            "lib/libQt6Core_${CMAKE_ANDROID_ARCH_ABI}.so"
-            "lib/libQt6Gui_${CMAKE_ANDROID_ARCH_ABI}.so"
-            "lib/libQt6Widgets_${CMAKE_ANDROID_ARCH_ABI}.so"
-            "lib/libQt6Qml_${CMAKE_ANDROID_ARCH_ABI}.so"
-            "lib/libQt6Quick_${CMAKE_ANDROID_ARCH_ABI}.so"
-            "lib/libQt6QuickWidgets_${CMAKE_ANDROID_ARCH_ABI}.so"
-            "lib/libQt6QuickControls2_${CMAKE_ANDROID_ARCH_ABI}.so"
-            "plugins/platforms/libplugins_platforms_qtforandroid_${CMAKE_ANDROID_ARCH_ABI}.so"
-    )
-endif()
-
 target_link_libraries(firebird-emu PRIVATE
     Qt6::Core
     Qt6::Gui
