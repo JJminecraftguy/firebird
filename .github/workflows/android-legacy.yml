@@ -168,74 +168,116 @@ jobs:
           grep -q '^android.suppressUnsupportedCompileSdk=' android/gradle.properties \
             || echo 'android.suppressUnsupportedCompileSdk=36' >> android/gradle.properties
 
-      - name: Configure and build (all ABIs, CMake)
+      - name: Configure and build (arm64-v8a)
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           set -euo pipefail
-          sh "$ARM64_QT_ROOT/bin/qt-cmake" -S . -B build-all \
+          sh "$ARM64_QT_ROOT/bin/qt-cmake" -S . -B build-arm64 \
             -DCMAKE_BUILD_TYPE=Release \
-            -DQT_ANDROID_BUILD_ALL_ABIS=ON \
             -DQT_ANDROID_MIN_SDK_VERSION=${{ matrix.min_sdk }} \
-            -DQT_ANDROID_TARGET_SDK_VERSION=${{ matrix.target_sdk }} \
-            -DQT_ANDROID_COMPILE_SDK_VERSION=${{ matrix.sdk_platform_num }}
-          cmake --build build-all --parallel
-          cmake --build build-all --target apk
+            -DQT_ANDROID_TARGET_SDK_VERSION=${{ matrix.target_sdk }}
+          cmake --build build-arm64 --parallel
+          cmake --build build-arm64 --target apk
 
-      - name: Sign APK
+      - name: Configure and build (armeabi-v7a)
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          sh "$ARMV7_QT_ROOT/bin/qt-cmake" -S . -B build-armv7 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DQT_ANDROID_MIN_SDK_VERSION=${{ matrix.min_sdk }} \
+            -DQT_ANDROID_TARGET_SDK_VERSION=${{ matrix.target_sdk }}
+          cmake --build build-armv7 --parallel
+          cmake --build build-armv7 --target apk
+
+      - name: Merge arm64-v8a + armeabi-v7a into universal APK
+        run: |
+          set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE"
+          cd "$ROOT"
+
+          APK64="$(find build-arm64 -name '*.apk' -not -path '*intermediates*' -print -quit)"
+          APK32="$(find build-armv7 -name '*.apk' -not -path '*intermediates*' -print -quit)"
+          test -n "$APK64" || { echo "::error::arm64 APK not found"; find build-arm64 -name '*.apk' >&2; exit 1; }
+          test -n "$APK32" || { echo "::error::armv7 APK not found"; find build-armv7 -name '*.apk' >&2; exit 1; }
+
+          unzip -l "$APK64" | grep -q 'lib/arm64-v8a/'   || { echo "::error::arm64 APK lacks lib/arm64-v8a"; exit 1; }
+          unzip -l "$APK32" | grep -q 'lib/armeabi-v7a/' || { echo "::error::armv7 APK lacks lib/armeabi-v7a"; exit 1; }
+
+          rm -rf "$ROOT/merge"
+          mkdir -p "$ROOT/merge/base" "$ROOT/merge/other" "$ROOT/merge/merged"
+
+          unzip -q "$APK64" -d "$ROOT/merge/base"
+          unzip -q "$APK32" -d "$ROOT/merge/other"
+
+          cp -a "$ROOT/merge/base/." "$ROOT/merge/merged/"
+          mkdir -p "$ROOT/merge/merged/lib"
+          rm -rf "$ROOT/merge/merged/lib/armeabi-v7a"
+          cp -a "$ROOT/merge/other/lib/armeabi-v7a" "$ROOT/merge/merged/lib/"
+          rm -rf "$ROOT/merge/merged/META-INF"
+
+          cd "$ROOT/merge/merged"
+          zip -qr ../merged-unaligned.apk . \
+            -x 'resources.arsc' 'lib/arm64-v8a/*.so' 'lib/armeabi-v7a/*.so'
+          zip -q -0 ../merged-unaligned.apk resources.arsc
+          zip -q -0 ../merged-unaligned.apk lib/arm64-v8a/*.so lib/armeabi-v7a/*.so
+
+      - name: Align and sign universal APK
         env:
           ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
           ANDROID_KEYSTORE_PWD: ${{ secrets.ANDROID_KEYSTORE_PWD }}
         run: |
           set -euo pipefail
+          ROOT="$GITHUB_WORKSPACE"
+          cd "$ROOT"
+          mkdir -p "$ROOT/dist"
 
-          APK_IN="$(find build-all/android-build/build/outputs/apk/release \
-                       -name '*.apk' -not -name '*-signed.apk' -print -quit)"
-          test -n "$APK_IN" || {
-            echo "::error::APK not found"
-            find build-all -name '*.apk' >&2
-            exit 1
-          }
-          echo "Found APK: $APK_IN"
+          ZIPALIGN="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/${{ matrix.build_tools }}/zipalign"
+          "$ZIPALIGN" -f -P 16 4 "$ROOT/merge/merged-unaligned.apk" \
+            "$ROOT/merge/aligned.apk"
+          "$ZIPALIGN" -c -P 16 4 "$ROOT/merge/aligned.apk"
 
-          APK_OUT="build-all/firebird-emu-${{ matrix.label }}-universal.apk"
+          OUT="$ROOT/dist/firebird-emu-${{ matrix.label }}-universal.apk"
           APKSIGNER="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/${{ matrix.build_tools }}/apksigner"
 
           if [ -n "${ANDROID_KEYSTORE_PWD:-}" ]; then
-            echo "$ANDROID_KEYSTORE" | base64 -d > keystore.jks
+            echo "$ANDROID_KEYSTORE" | base64 -d > "$ROOT/keystore.jks"
             "$APKSIGNER" sign \
-              --ks keystore.jks \
+              --ks "$ROOT/keystore.jks" \
               --ks-key-alias firebirdemugh \
               --ks-pass "pass:${ANDROID_KEYSTORE_PWD}" \
               --key-pass "pass:${ANDROID_KEYSTORE_PWD}" \
-              --out "$APK_OUT" "$APK_IN"
+              --out "$OUT" "$ROOT/merge/aligned.apk"
           else
             echo "::warning::No release keystore available; signing with the debug key."
-            keytool -genkeypair -keystore debug.keystore \
+            keytool -genkeypair -keystore "$ROOT/debug.keystore" \
               -storepass android -keypass android \
               -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
               -dname "CN=Android Debug,O=Android,C=US"
             "$APKSIGNER" sign \
-              --ks debug.keystore --ks-key-alias androiddebugkey \
+              --ks "$ROOT/debug.keystore" --ks-key-alias androiddebugkey \
               --ks-pass pass:android --key-pass pass:android \
-              --out "$APK_OUT" "$APK_IN"
+              --out "$OUT" "$ROOT/merge/aligned.apk"
           fi
-          "$APKSIGNER" verify --print-certs "$APK_OUT"
+          "$APKSIGNER" verify --print-certs "$OUT"
 
           AAPT2="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/${{ matrix.build_tools }}/aapt2"
           echo "--- badging ---"
-          "$AAPT2" dump badging "$APK_OUT" | grep -E "^(package|native-code|sdkVersion|targetSdkVersion):" || true
+          "$AAPT2" dump badging "$OUT" | grep -E "^(package|native-code|sdkVersion|targetSdkVersion):" || true
 
-          NATIVE="$("$AAPT2" dump badging "$APK_OUT" | sed -n "s/^native-code: \(.*\)/\1/p")"
-          echo "$NATIVE" | grep -q "arm64-v8a"   || { echo "::error::APK lacks arm64-v8a";   exit 1; }
+          NATIVE="$("$AAPT2" dump badging "$OUT" | sed -n "s/^native-code: \(.*\)/\1/p")"
+          echo "$NATIVE" | grep -q "arm64-v8a"   || { echo "::error::APK lacks arm64-v8a"; exit 1; }
           echo "$NATIVE" | grep -q "armeabi-v7a" || { echo "::error::APK lacks armeabi-v7a"; exit 1; }
 
       - name: Upload universal APK
         uses: actions/upload-artifact@v7
         with:
           name: firebird-emu-${{ matrix.label }}-universal
-          path: build-all/firebird-emu-${{ matrix.label }}-universal.apk
+          path: dist/firebird-emu-${{ matrix.label }}-universal.apk
           if-no-files-found: error
 
   package-legacy:
