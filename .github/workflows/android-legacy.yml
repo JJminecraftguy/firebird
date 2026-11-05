@@ -102,6 +102,19 @@ jobs:
           ndk-version: ${{ matrix.ndk }}
           add-to-path: false
 
+      - name: Nuke all build state
+        run: |
+          set -euo pipefail
+          rm -rf build build-all build-arm64 build-armv7 \
+                 android-build android_abi_builds \
+                 merge dist patch artifacts
+          find . -name CMakeCache.txt -delete
+          find . -name CMakeFiles -type d -prune -exec rm -rf {} + 2>/dev/null || true
+          find . -name '*.o' -delete
+          find . -name '*.so' -delete
+          echo "Workspace after nuke:"
+          find . -maxdepth 1 -mindepth 1 -type d
+
       - name: Install Qt ${{ matrix.qt_version }} (arm64-v8a)
         uses: jurplel/install-qt-action@v4
         with:
