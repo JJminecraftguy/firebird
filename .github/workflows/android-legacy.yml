@@ -145,6 +145,8 @@ jobs:
           if grep -q 'compileSdkVersion' android/build.gradle; then
             sed -i -E "s|compileSdkVersion[[:space:]]+.*|compileSdkVersion ${{ matrix.sdk_platform_num }}|" \
               android/build.gradle
+            grep -q '^android.bundle.enableUncompressedNativeLibs=' android/gradle.properties \
+              || echo 'android.bundle.enableUncompressedNativeLibs=false' >> android/gradle.properties
             echo "--- compileSdkVersion ---"
             grep 'compileSdkVersion' android/build.gradle
           else
