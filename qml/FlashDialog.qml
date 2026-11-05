@@ -1,29 +1,30 @@
 import QtQuick
-import QtQuick.Window
 import QtQuick.Layouts
 import QtQuick.Controls
 import QtQuick.Dialogs
 import Firebird.Emu 1.0
 import Firebird.UIComponents 1.0
 
-// Qt Quick Controls 2 has no window based Dialog, so this is a plain Window.
-Window {
+Dialog {
     id: flashDialog
     title: qsTr("Create Flash Image")
-    modality: Qt.WindowModal
-    flags: Qt.Dialog
+    modal: true
+    focus: true
 
-    // The layout's height depends on which rows are visible
-    minimumWidth: 400
-    minimumHeight: layout.implicitHeight + 2 * layout.anchors.margins
-    width: Math.max(minimumWidth, layout.implicitWidth + 2 * layout.anchors.margins)
-    height: minimumHeight
+    popupType: Popup.Item
+
+    implicitWidth: Math.max(400, layout.implicitWidth + 2 * layout.anchors.margins)
+    implicitHeight: layout.implicitHeight + 2 * layout.anchors.margins
+
+    background: Rectangle {
+        color: paletteActive.window
+        border.color: paletteActive.mid
+        border.width: 1
+    }
 
     SystemPalette {
         id: paletteActive
     }
-
-    color: paletteActive.window
     readonly property color _fg: (paletteActive.window.hslLightness < 0.5) ? "white" : paletteActive.windowText
     palette.windowText: _fg
     palette.text: _fg
