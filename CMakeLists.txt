@@ -309,7 +309,7 @@ endforeach()
 set(QT_ANDROID_PACKAGE_NAME        "org.firebird.emu" CACHE STRING "Android application package name")
 set(QT_ANDROID_MIN_SDK_VERSION     "23"               CACHE STRING "Android minimum SDK version")
 set(QT_ANDROID_TARGET_SDK_VERSION  "28"               CACHE STRING "Android target SDK version")
-set(QT_ANDROID_COMPILE_SDK_VERSION "34" CACHE STRING "Android compile SDK version")
+set(QT_ANDROID_COMPILE_SDK_VERSION  "36" CACHE STRING "Android compile SDK version")
 
 set(QML_IMPORT_PATH "${CMAKE_CURRENT_SOURCE_DIR}/qml" CACHE PATH "QML import path for Qt Creator's code model")
 
