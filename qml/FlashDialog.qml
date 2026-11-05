@@ -167,7 +167,7 @@ Dialog {
 
             Button {
                 text: qsTr("Cancel")
-                onClicked: flashDialog.visible = false
+                onClicked: flashDialog.close()
             }
 
             Button {
@@ -204,10 +204,8 @@ Dialog {
 
                 if (success) {
                     flashCreated(filePath);
-                    flashDialog.visible = false;
+                    flashDialog.close()
                 }
-                else
-                    failureDialog.visible = true;
             }
         }
     }
