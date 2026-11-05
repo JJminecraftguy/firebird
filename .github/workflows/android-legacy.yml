@@ -69,9 +69,32 @@ jobs:
             "build-tools;${{ matrix.build_tools }}" \
             "platform-tools"
 
-      - name: Remove preinstalled SDK platform that breaks legacy Qt
+      - name: Pin the SDK platform for legacy Qt
         run: |
-          sdkmanager --uninstall "platforms;android-36-ext19" || true
+          set -euo pipefail
+
+          KEEP="${{ matrix.sdk_platform }}"
+
+          if [ ! -d "$ANDROID_SDK_ROOT/platforms/$KEEP" ]; then
+            echo "::error::matrix platform $KEEP is missing"
+            ls -la "$ANDROID_SDK_ROOT/platforms" >&2
+            exit 1
+          fi
+
+          for dir in "$ANDROID_SDK_ROOT/platforms"/*; do
+            [ -d "$dir" ] || continue
+            name=$(basename "$dir")
+            if [ "$name" = "$KEEP" ]; then
+              echo "Keeping platforms;$name"
+              continue
+            fi
+            echo "Removing platforms;$name"
+            sdkmanager --uninstall "platforms;$name" >/dev/null 2>&1 \
+              || rm -rf "$dir"
+          done
+
+          echo "--- remaining platforms ---"
+          ls "$ANDROID_SDK_ROOT/platforms"
 
       - uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1
         id: setup-ndk
