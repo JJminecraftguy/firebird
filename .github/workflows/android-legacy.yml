@@ -237,9 +237,16 @@ jobs:
           mkdir -p "$ROOT/dist"
 
           ZIPALIGN="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/${{ matrix.build_tools }}/zipalign"
-          "$ZIPALIGN" -f -P 16 4 "$ROOT/merge/merged-unaligned.apk" \
-            "$ROOT/merge/aligned.apk"
-          "$ZIPALIGN" -c -P 16 4 "$ROOT/merge/aligned.apk"
+
+          if "$ZIPALIGN" 2>&1 | grep -q -- '-P '; then
+            "$ZIPALIGN" -f -P 16 4 "$ROOT/merge/merged-unaligned.apk" \
+              "$ROOT/merge/aligned.apk"
+            "$ZIPALIGN" -c -P 16 4 "$ROOT/merge/aligned.apk"
+          else
+            "$ZIPALIGN" -f -p 4 "$ROOT/merge/merged-unaligned.apk" \
+              "$ROOT/merge/aligned.apk"
+            "$ZIPALIGN" -c -p 4 "$ROOT/merge/aligned.apk"
+          fi
 
           OUT="$ROOT/dist/firebird-emu-${{ matrix.label }}-universal.apk"
           APKSIGNER="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/${{ matrix.build_tools }}/apksigner"
