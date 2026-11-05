@@ -224,9 +224,8 @@ jobs:
 
           cd "$ROOT/merge/merged"
           zip -qr ../merged-unaligned.apk . \
-            -x 'resources.arsc' 'lib/arm64-v8a/*.so' 'lib/armeabi-v7a/*.so'
+            -x 'resources.arsc'
           zip -q -0 ../merged-unaligned.apk resources.arsc
-          zip -q -0 ../merged-unaligned.apk lib/arm64-v8a/*.so lib/armeabi-v7a/*.so
 
       - name: Align and sign universal APK
         env:
