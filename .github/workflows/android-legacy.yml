@@ -193,6 +193,7 @@ jobs:
           set -euo pipefail
           sh "$ARMV7_QT_ROOT/bin/qt-cmake" -S . -B build-armv7 \
             -DCMAKE_BUILD_TYPE=Release \
+            -DTRANSLATION_ENABLED=FALSE \
             -DQT_ANDROID_MIN_SDK_VERSION=${{ matrix.min_sdk }} \
             -DQT_ANDROID_TARGET_SDK_VERSION=${{ matrix.target_sdk }}
           cmake --build build-armv7 --parallel
