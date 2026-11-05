@@ -419,6 +419,11 @@ if(ANDROID)
     target_link_options(firebird-emu PRIVATE "-Wl,-Bsymbolic")
 endif()
 
+if(ANDROID AND FB_ARCH STREQUAL "arm" AND Qt6_VERSION VERSION_LESS "6.5")
+    message(STATUS "Allowing TEXTREL on Android armeabi-v7a (Qt ${Qt6_VERSION} + NDK r23b)")
+    target_link_options(firebird-emu PRIVATE "-Wl,-z,notext")
+endif()
+
 if(WIN32)
     target_link_libraries(firebird-emu PRIVATE winmm ws2_32)
 endif()
