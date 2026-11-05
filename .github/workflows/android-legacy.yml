@@ -69,15 +69,16 @@ jobs:
             "build-tools;${{ matrix.build_tools }}" \
             "platform-tools"
 
+      - name: Remove preinstalled SDK platform that breaks legacy Qt
+        run: |
+          sdkmanager --uninstall "platforms;android-36-ext19" || true
+
       - uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1
         id: setup-ndk
         with:
           ndk-version: ${{ matrix.ndk }}
           add-to-path: false
 
-      # Two installs, one ABI each, into the same Qt version tree. This is the
-      # same pattern the main Android workflow uses because aqtinstall 3.3.0
-      # (pinned by install-qt-action) only resolves single-arch repos cleanly.
       - name: Install Qt ${{ matrix.qt_version }} (arm64-v8a)
         uses: jurplel/install-qt-action@v4
         with:
@@ -108,10 +109,6 @@ jobs:
           echo "ARMV7_QT_ROOT=$QT_ROOT_DIR" >> "$GITHUB_ENV"
           find "$QT_ROOT_DIR/bin" -maxdepth 1 -type f -exec chmod +x {} + 2>/dev/null || true
 
-      # Legacy Qt (6.4/6.7) needs the older Gradle wrapper and
-      # extractNativeLibs=true, exactly as the qmake legacy workflow did.
-      # These seds touch the source files; androiddeployqt copies them into
-      # build-all/android-build/ during the apk target.
       - name: Adapt Gradle wrapper, manifest, and compile SDK for ${{ matrix.label }}
         run: |
           set -euo pipefail
@@ -122,10 +119,6 @@ jobs:
           sed -i 's/android:extractNativeLibs="false"/android:extractNativeLibs="true"/' \
             android/AndroidManifest.xml
 
-          # The AGP bundled with Qt 6.4/6.7 (7.4.1) cannot parse the runner's
-          # android-36-ext19 preview jar. Force compileSdkVersion to the
-          # matching platform from the matrix so the old AGP links against a
-          # jar it understands.
           if grep -q 'compileSdkVersion' android/build.gradle; then
             sed -i -E "s|compileSdkVersion[[:space:]]+.*|compileSdkVersion ${{ matrix.sdk_platform_num }}|" \
               android/build.gradle
