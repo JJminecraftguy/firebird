@@ -45,7 +45,7 @@ Controls.Dialog {
 
     // Scroll wrapper so the field grid stays reachable when the dialog is
     // shorter than its content (small screens, landscape).
-    ScrollView {
+    Controls.ScrollView {
         id: scroller
         anchors.fill: parent
         clip: true
