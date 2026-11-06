@@ -11,8 +11,21 @@ Controls.Dialog {
     modal: true
     focus: true
 
-    implicitWidth: Math.max(400, layout.implicitWidth + 2 * layout.anchors.margins)
-    implicitHeight: layout.implicitHeight + 2 * layout.anchors.margins
+    // Anchor to the top of the whole window instead of centering over the
+    // declaring item (a small FileSelect inside the GroupBox). Clamp width
+    // and height so the dialog never overflows the screen.
+    parent: Controls.Overlay.overlay
+    x: Math.max(10, (parent.width - width) / 2)
+    y: 10
+    width: Math.min(400, parent.width - 20)
+    height: Math.min(implicitHeight, parent.height - y - 10)
+
+    leftPadding: 5
+    rightPadding: 5
+    topPadding: 5
+    bottomPadding: 5
+
+    implicitHeight: layout.implicitHeight + topPadding + bottomPadding
 
     background: Rectangle {
         color: paletteActive.window
@@ -30,152 +43,159 @@ Controls.Dialog {
 
     signal flashCreated(string filePath)
 
-    GridLayout {
-        id: layout
+    // Scroll wrapper so the field grid stays reachable when the dialog is
+    // shorter than its content (small screens, landscape).
+    ScrollView {
+        id: scroller
         anchors.fill: parent
-        anchors.margins: 5
-        columns: 2
+        clip: true
 
-        FBLabel {
-            Layout.minimumHeight: implicitHeight
-            Layout.alignment: Qt.AlignLeft
-            text: qsTr("Model:")
-        }
+        GridLayout {
+            id: layout
+            width: scroller.availableWidth
+            columns: 2
 
-        Controls.ComboBox {
-            id: modelCombo
-            property bool cxSelected: modelCombo.currentIndex == 2 || modelCombo.currentIndex == 3
-            property bool cx2Selected: modelCombo.currentIndex == 4
-            property int productId: [0x0E0, 0x0C2, 0x100, 0x0F0, 0x1C0][currentIndex]
-            Layout.fillWidth: true
-            model: ["Touchpad", "Touchpad CAS", "CX", "CX CAS", "CX II (/-T/CAS)"]
-            currentIndex: 3
-        }
-
-        FBLabel {
-            visible: subtypeCombo.visible
-            Layout.alignment: Qt.AlignLeft
-            text: qsTr("CX Subtype:")
-        }
-
-        Controls.ComboBox {
-            id: subtypeCombo
-            property int featureValue: [0x005, 0x085, 0x185][currentIndex]
-            Layout.fillWidth: true
-            visible: modelCombo.cxSelected
-            model: ["HW-A", "HW-J (CXCR)", "HW-W (CXCR4)"]
-        }
-
-        FBLabel {
-            Layout.alignment: Qt.AlignLeft
-            text: qsTr("Manuf:")
-        }
-
-        FileSelect {
-            id: manufSelect
-            Layout.maximumWidth: parent.width
-            Layout.fillWidth: true
-            subtext: filePath ? Emu.manufDescription(filePath) : ""
-        }
-
-        // <-- Unless CX II
-        FBLabel {
-            visible: boot2Select.visible
-            Layout.alignment: Qt.AlignLeft
-            text: qsTr("Boot2:")
-        }
-
-        FileSelect {
-            id: boot2Select
-            visible: !modelCombo.cx2Selected
-            Layout.fillWidth: true
-            subtext: filePath ? Emu.componentDescription(filePath, "BOOT2     ") : ""
-        }
-
-        FBLabel {
-            visible: osSelect.visible
-            Layout.alignment: Qt.AlignLeft
-            text: qsTr("OS:")
-        }
-
-        FileSelect {
-            id: osSelect
-            visible: !modelCombo.cx2Selected
-            Layout.fillWidth: true
-            subtext: filePath ? Emu.osDescription(filePath) : ""
-        }
-        // -->
-
-        // <-- Only CX II
-        FBLabel {
-            visible: bootloaderSelect.visible
-            Layout.alignment: Qt.AlignLeft
-            text: qsTr("Bootloader:")
-        }
-
-        FileSelect {
-            id: bootloaderSelect
-            visible: modelCombo.cx2Selected
-            Layout.fillWidth: true
-            subtext: filePath ? Emu.componentDescription(filePath, "BOOT LOADE") : ""
-        }
-
-        FBLabel {
-            visible: installerSelect.visible
-            Layout.alignment: Qt.AlignLeft
-            text: qsTr("Installer:")
-        }
-
-        FileSelect {
-            id: installerSelect
-            visible: modelCombo.cx2Selected
-            Layout.fillWidth: true
-            subtext: filePath ? Emu.componentDescription(filePath, "INSTALLER ") : ""
-        }
-        // -->
-
-        FBLabel {
-            Layout.alignment: Qt.AlignLeft
-            text: qsTr("Diags:")
-        }
-
-        FileSelect {
-            id: diagsSelect
-            Layout.fillWidth: true
-            subtext: filePath ? Emu.componentDescription(filePath, "DIAGS     ") : ""
-        }
-
-        property string validationText: (modelCombo.cx2Selected && !manufSelect.filePath) ? qsTr("Manuf required for CX II") : ""
-
-        FBLabel {
-            Layout.alignment: Qt.AlignCenter
-            Layout.columnSpan: 2
-            color: "red"
-            text: parent.validationText
-        }
-
-        Item {
-            Layout.fillHeight: true
-            Layout.columnSpan: 2
-        }
-
-        RowLayout {
-            Layout.columnSpan: 2
-            Layout.alignment: Qt.AlignRight
-
-            Controls.Button {
-                text: qsTr("Cancel")
-                onClicked: flashDialog.close()
+            FBLabel {
+                Layout.minimumHeight: implicitHeight
+                Layout.alignment: Qt.AlignLeft
+                text: qsTr("Model:")
             }
 
-            Controls.Button {
-                text: qsTr("Save")
-                enabled: layout.validationText === ""
-                onClicked: {
-                    // Don't close the dialog now, but only
-                    // after successful saving
-                    fileDialogLoader.active = true;
-                    fileDialogLoader.item.open();
+            Controls.ComboBox {
+                id: modelCombo
+                property bool cxSelected: modelCombo.currentIndex == 2 || modelCombo.currentIndex == 3
+                property bool cx2Selected: modelCombo.currentIndex == 4
+                property int productId: [0x0E0, 0x0C2, 0x100, 0x0F0, 0x1C0][currentIndex]
+                Layout.fillWidth: true
+                model: ["Touchpad", "Touchpad CAS", "CX", "CX CAS", "CX II (/-T/CAS)"]
+                currentIndex: 3
+            }
+
+            FBLabel {
+                visible: subtypeCombo.visible
+                Layout.alignment: Qt.AlignLeft
+                text: qsTr("CX Subtype:")
+            }
+
+            Controls.ComboBox {
+                id: subtypeCombo
+                property int featureValue: [0x005, 0x085, 0x185][currentIndex]
+                Layout.fillWidth: true
+                visible: modelCombo.cxSelected
+                model: ["HW-A", "HW-J (CXCR)", "HW-W (CXCR4)"]
+            }
+
+            FBLabel {
+                Layout.alignment: Qt.AlignLeft
+                text: qsTr("Manuf:")
+            }
+
+            FileSelect {
+                id: manufSelect
+                Layout.maximumWidth: parent.width
+                Layout.fillWidth: true
+                subtext: filePath ? Emu.manufDescription(filePath) : ""
+            }
+
+            // <-- Unless CX II
+            FBLabel {
+                visible: boot2Select.visible
+                Layout.alignment: Qt.AlignLeft
+                text: qsTr("Boot2:")
+            }
+
+            FileSelect {
+                id: boot2Select
+                visible: !modelCombo.cx2Selected
+                Layout.fillWidth: true
+                subtext: filePath ? Emu.componentDescription(filePath, "BOOT2     ") : ""
+            }
+
+            FBLabel {
+                visible: osSelect.visible
+                Layout.alignment: Qt.AlignLeft
+                text: qsTr("OS:")
+            }
+
+            FileSelect {
+                id: osSelect
+                visible: !modelCombo.cx2Selected
+                Layout.fillWidth: true
+                subtext: filePath ? Emu.osDescription(filePath) : ""
+            }
+            // -->
+
+            // <-- Only CX II
+            FBLabel {
+                visible: bootloaderSelect.visible
+                Layout.alignment: Qt.AlignLeft
+                text: qsTr("Bootloader:")
+            }
+
+            FileSelect {
+                id: bootloaderSelect
+                visible: modelCombo.cx2Selected
+                Layout.fillWidth: true
+                subtext: filePath ? Emu.componentDescription(filePath, "BOOT LOADE") : ""
+            }
+
+            FBLabel {
+                visible: installerSelect.visible
+                Layout.alignment: Qt.AlignLeft
+                text: qsTr("Installer:")
+            }
+
+            FileSelect {
+                id: installerSelect
+                visible: modelCombo.cx2Selected
+                Layout.fillWidth: true
+                subtext: filePath ? Emu.componentDescription(filePath, "INSTALLER ") : ""
+            }
+            // -->
+
+            FBLabel {
+                Layout.alignment: Qt.AlignLeft
+                text: qsTr("Diags:")
+            }
+
+            FileSelect {
+                id: diagsSelect
+                Layout.fillWidth: true
+                subtext: filePath ? Emu.componentDescription(filePath, "DIAGS     ") : ""
+            }
+
+            property string validationText: (modelCombo.cx2Selected && !manufSelect.filePath) ? qsTr("Manuf required for CX II") : ""
+
+            FBLabel {
+                Layout.alignment: Qt.AlignCenter
+                Layout.columnSpan: layout.columns
+                color: "red"
+                text: layout.validationText
+            }
+
+            Item {
+                Layout.fillHeight: true
+                Layout.columnSpan: layout.columns
+            }
+
+            RowLayout {
+                Layout.columnSpan: layout.columns
+                Layout.alignment: Qt.AlignRight
+
+                Controls.Button {
+                    text: qsTr("Cancel")
+                    onClicked: flashDialog.close()
+                }
+
+                Controls.Button {
+                    text: qsTr("Save")
+                    enabled: layout.validationText === ""
+                    onClicked: {
+                        // Don't close the dialog now, but only
+                        // after successful saving
+                        fileDialogLoader.active = true;
+                        fileDialogLoader.item.open();
+                    }
                 }
             }
         }
