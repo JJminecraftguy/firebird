@@ -21,7 +21,7 @@ Controls.Dialog {
         border.width: 1
     }
 
-    Controls.SystemPalette {
+    SystemPalette {
         id: paletteActive
     }
     readonly property color _fg: (paletteActive.window.hslLightness < 0.5) ? "white" : paletteActive.windowText
