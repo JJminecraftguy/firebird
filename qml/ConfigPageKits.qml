@@ -126,7 +126,7 @@ ColumnLayout {
                     filePath = Qt.binding(function() { return kitList.currentItem.myData.flash; });
                 }
                 showCreateButton: true
-                onCreate: flashDialog.visible = true
+                onCreate: flashDialog.open()
             }
 
             FBLabel {
