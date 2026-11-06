@@ -11,21 +11,12 @@ Controls.Dialog {
     modal: true
     focus: true
 
-    // Anchor to the top of the whole window instead of centering over the
-    // declaring item (a small FileSelect inside the GroupBox). Clamp width
-    // and height so the dialog never overflows the screen.
-    parent: Controls.Overlay.overlay
-    x: Math.max(10, (parent.width - width) / 2)
-    y: 10
-    width: Math.min(400, parent.width - 20)
-    height: Math.min(implicitHeight, parent.height - y - 10)
-
-    leftPadding: 5
-    rightPadding: 5
-    topPadding: 5
-    bottomPadding: 5
-
-    implicitHeight: layout.implicitHeight + topPadding + bottomPadding
+    // Size from the available screen area, not from the scrollable content.
+    // Overlay.overlay is the Popup overlay item; its size is the window size.
+    readonly property real _availW: Controls.Overlay.overlay ? Controls.Overlay.overlay.width  : 720
+    readonly property real _availH: Controls.Overlay.overlay ? Controls.Overlay.overlay.height : 1280
+    width:  Math.min(640, _availW - 32)
+    height: Math.min(860, _availH - 32)
 
     background: Rectangle {
         color: paletteActive.window
@@ -43,159 +34,164 @@ Controls.Dialog {
 
     signal flashCreated(string filePath)
 
-    // Scroll wrapper so the field grid stays reachable when the dialog is
-    // shorter than its content (small screens, landscape).
-    Controls.ScrollView {
-        id: scroller
-        anchors.fill: parent
-        clip: true
+    // Single child => becomes the popup's contentItem, sized to the dialog
+    // minus padding. Buttons live here, NOT inside the ScrollView.
+    ColumnLayout {
+        spacing: 8
 
-        GridLayout {
-            id: layout
-            width: scroller.availableWidth
-            columns: 2
+        Controls.ScrollView {
+            id: flashScroll
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
 
-            FBLabel {
-                Layout.minimumHeight: implicitHeight
-                Layout.alignment: Qt.AlignLeft
-                text: qsTr("Model:")
-            }
+            // Inside a ScrollView the content must not use anchors.fill: parent
+            // (that kills scrolling and clips the tail). Bind width to the
+            // available viewport width instead.
+            GridLayout {
+                id: layout
+                width: flashScroll.availableWidth
+                columns: 2
+                columnSpacing: 5
+                rowSpacing: 5
 
-            Controls.ComboBox {
-                id: modelCombo
-                property bool cxSelected: modelCombo.currentIndex == 2 || modelCombo.currentIndex == 3
-                property bool cx2Selected: modelCombo.currentIndex == 4
-                property int productId: [0x0E0, 0x0C2, 0x100, 0x0F0, 0x1C0][currentIndex]
-                Layout.fillWidth: true
-                model: ["Touchpad", "Touchpad CAS", "CX", "CX CAS", "CX II (/-T/CAS)"]
-                currentIndex: 3
-            }
-
-            FBLabel {
-                visible: subtypeCombo.visible
-                Layout.alignment: Qt.AlignLeft
-                text: qsTr("CX Subtype:")
-            }
-
-            Controls.ComboBox {
-                id: subtypeCombo
-                property int featureValue: [0x005, 0x085, 0x185][currentIndex]
-                Layout.fillWidth: true
-                visible: modelCombo.cxSelected
-                model: ["HW-A", "HW-J (CXCR)", "HW-W (CXCR4)"]
-            }
-
-            FBLabel {
-                Layout.alignment: Qt.AlignLeft
-                text: qsTr("Manuf:")
-            }
-
-            FileSelect {
-                id: manufSelect
-                Layout.maximumWidth: parent.width
-                Layout.fillWidth: true
-                subtext: filePath ? Emu.manufDescription(filePath) : ""
-            }
-
-            // <-- Unless CX II
-            FBLabel {
-                visible: boot2Select.visible
-                Layout.alignment: Qt.AlignLeft
-                text: qsTr("Boot2:")
-            }
-
-            FileSelect {
-                id: boot2Select
-                visible: !modelCombo.cx2Selected
-                Layout.fillWidth: true
-                subtext: filePath ? Emu.componentDescription(filePath, "BOOT2     ") : ""
-            }
-
-            FBLabel {
-                visible: osSelect.visible
-                Layout.alignment: Qt.AlignLeft
-                text: qsTr("OS:")
-            }
-
-            FileSelect {
-                id: osSelect
-                visible: !modelCombo.cx2Selected
-                Layout.fillWidth: true
-                subtext: filePath ? Emu.osDescription(filePath) : ""
-            }
-            // -->
-
-            // <-- Only CX II
-            FBLabel {
-                visible: bootloaderSelect.visible
-                Layout.alignment: Qt.AlignLeft
-                text: qsTr("Bootloader:")
-            }
-
-            FileSelect {
-                id: bootloaderSelect
-                visible: modelCombo.cx2Selected
-                Layout.fillWidth: true
-                subtext: filePath ? Emu.componentDescription(filePath, "BOOT LOADE") : ""
-            }
-
-            FBLabel {
-                visible: installerSelect.visible
-                Layout.alignment: Qt.AlignLeft
-                text: qsTr("Installer:")
-            }
-
-            FileSelect {
-                id: installerSelect
-                visible: modelCombo.cx2Selected
-                Layout.fillWidth: true
-                subtext: filePath ? Emu.componentDescription(filePath, "INSTALLER ") : ""
-            }
-            // -->
-
-            FBLabel {
-                Layout.alignment: Qt.AlignLeft
-                text: qsTr("Diags:")
-            }
-
-            FileSelect {
-                id: diagsSelect
-                Layout.fillWidth: true
-                subtext: filePath ? Emu.componentDescription(filePath, "DIAGS     ") : ""
-            }
-
-            property string validationText: (modelCombo.cx2Selected && !manufSelect.filePath) ? qsTr("Manuf required for CX II") : ""
-
-            FBLabel {
-                Layout.alignment: Qt.AlignCenter
-                Layout.columnSpan: layout.columns
-                color: "red"
-                text: layout.validationText
-            }
-
-            Item {
-                Layout.fillHeight: true
-                Layout.columnSpan: layout.columns
-            }
-
-            RowLayout {
-                Layout.columnSpan: layout.columns
-                Layout.alignment: Qt.AlignRight
-
-                Controls.Button {
-                    text: qsTr("Cancel")
-                    onClicked: flashDialog.close()
+                FBLabel {
+                    Layout.minimumHeight: implicitHeight
+                    Layout.alignment: Qt.AlignLeft
+                    text: qsTr("Model:")
                 }
 
-                Controls.Button {
-                    text: qsTr("Save")
-                    enabled: layout.validationText === ""
-                    onClicked: {
-                        // Don't close the dialog now, but only
-                        // after successful saving
-                        fileDialogLoader.active = true;
-                        fileDialogLoader.item.open();
-                    }
+                Controls.ComboBox {
+                    id: modelCombo
+                    property bool cxSelected: modelCombo.currentIndex == 2 || modelCombo.currentIndex == 3
+                    property bool cx2Selected: modelCombo.currentIndex == 4
+                    property int productId: [0x0E0, 0x0C2, 0x100, 0x0F0, 0x1C0][currentIndex]
+                    Layout.fillWidth: true
+                    model: ["Touchpad", "Touchpad CAS", "CX", "CX CAS", "CX II (/-T/CAS)"]
+                    currentIndex: 3
+                }
+
+                FBLabel {
+                    visible: subtypeCombo.visible
+                    Layout.alignment: Qt.AlignLeft
+                    text: qsTr("CX Subtype:")
+                }
+
+                Controls.ComboBox {
+                    id: subtypeCombo
+                    property int featureValue: [0x005, 0x085, 0x185][currentIndex]
+                    Layout.fillWidth: true
+                    visible: modelCombo.cxSelected
+                    model: ["HW-A", "HW-J (CXCR)", "HW-W (CXCR4)"]
+                }
+
+                FBLabel {
+                    Layout.alignment: Qt.AlignLeft
+                    text: qsTr("Manuf:")
+                }
+
+                FileSelect {
+                    id: manufSelect
+                    Layout.maximumWidth: parent.width
+                    Layout.fillWidth: true
+                    subtext: filePath ? Emu.manufDescription(filePath) : ""
+                }
+
+                FBLabel {
+                    visible: boot2Select.visible
+                    Layout.alignment: Qt.AlignLeft
+                    text: qsTr("Boot2:")
+                }
+
+                FileSelect {
+                    id: boot2Select
+                    visible: !modelCombo.cx2Selected
+                    Layout.fillWidth: true
+                    subtext: filePath ? Emu.componentDescription(filePath, "BOOT2     ") : ""
+                }
+
+                FBLabel {
+                    visible: osSelect.visible
+                    Layout.alignment: Qt.AlignLeft
+                    text: qsTr("OS:")
+                }
+
+                FileSelect {
+                    id: osSelect
+                    visible: !modelCombo.cx2Selected
+                    Layout.fillWidth: true
+                    subtext: filePath ? Emu.osDescription(filePath) : ""
+                }
+
+                FBLabel {
+                    visible: bootloaderSelect.visible
+                    Layout.alignment: Qt.AlignLeft
+                    text: qsTr("Bootloader:")
+                }
+
+                FileSelect {
+                    id: bootloaderSelect
+                    visible: modelCombo.cx2Selected
+                    Layout.fillWidth: true
+                    subtext: filePath ? Emu.componentDescription(filePath, "BOOT LOADE") : ""
+                }
+
+                FBLabel {
+                    visible: installerSelect.visible
+                    Layout.alignment: Qt.AlignLeft
+                    text: qsTr("Installer:")
+                }
+
+                FileSelect {
+                    id: installerSelect
+                    visible: modelCombo.cx2Selected
+                    Layout.fillWidth: true
+                    subtext: filePath ? Emu.componentDescription(filePath, "INSTALLER ") : ""
+                }
+
+                FBLabel {
+                    Layout.alignment: Qt.AlignLeft
+                    text: qsTr("Diags:")
+                }
+
+                FileSelect {
+                    id: diagsSelect
+                    Layout.fillWidth: true
+                    subtext: filePath ? Emu.componentDescription(filePath, "DIAGS     ") : ""
+                }
+
+                property string validationText: (modelCombo.cx2Selected && !manufSelect.filePath) ? qsTr("Manuf required for CX II") : ""
+
+                FBLabel {
+                    Layout.alignment: Qt.AlignCenter
+                    Layout.columnSpan: 2
+                    color: "red"
+                    text: parent.validationText
+                }
+
+                // NOTE: the old Item { Layout.fillHeight: true } spacer is gone.
+                // In this structure the ScrollView already takes the remaining
+                // space; keeping the spacer would push the button row off again.
+            }
+        }
+
+        // Buttons live outside the ScrollView so they are always visible.
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignRight
+            spacing: 8
+
+            Controls.Button {
+                text: qsTr("Cancel")
+                onClicked: flashDialog.close()
+            }
+
+            Controls.Button {
+                text: qsTr("Save")
+                enabled: layout.validationText === ""
+                onClicked: {
+                    fileDialogLoader.active = true;
+                    fileDialogLoader.item.open();
                 }
             }
         }
@@ -222,7 +218,7 @@ Controls.Dialog {
 
                 if (success) {
                     flashCreated(filePath);
-                    flashDialog.close()
+                    flashDialog.close();
                 }
             }
         }
