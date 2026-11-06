@@ -12,11 +12,6 @@ Controls.Dialog {
     modal: true
     focus: true
 
-    // Size and position explicitly from the screen. Controls.Overlay.overlay
-    // is null at binding time (before the popup is shown), so the previous
-    // fallback sized the dialog for a 720x1280 screen on a 360x640 viewport,
-    // placing it off-screen. QtQuick.Window's Screen attached property
-    // reports logical pixels on Android and is available immediately.
     width:  Math.max(320, Math.min(640, Screen.width  - 32))
     height: Math.max(400, Math.min(860, Screen.height - 32))
     x: (Screen.width  - width)  / 2
@@ -26,7 +21,7 @@ Controls.Dialog {
         color: paletteActive.window
         border.color: paletteActive.mid
         border.width: 1
-  
+    }
 
     SystemPalette {
         id: paletteActive
@@ -38,8 +33,6 @@ Controls.Dialog {
 
     signal flashCreated(string filePath)
 
-    // Single child => becomes the popup's contentItem, sized to the dialog
-    // minus padding. Buttons live here, NOT inside the ScrollView.
     ColumnLayout {
         spacing: 8
 
@@ -49,9 +42,6 @@ Controls.Dialog {
             Layout.fillHeight: true
             clip: true
 
-            // Inside a ScrollView the content must not use anchors.fill: parent
-            // (that kills scrolling and clips the tail). Bind width to the
-            // available viewport width instead.
             GridLayout {
                 id: layout
                 width: flashScroll.availableWidth
@@ -172,14 +162,9 @@ Controls.Dialog {
                     color: "red"
                     text: parent.validationText
                 }
-
-                // NOTE: the old Item { Layout.fillHeight: true } spacer is gone.
-                // In this structure the ScrollView already takes the remaining
-                // space; keeping the spacer would push the button row off again.
             }
         }
 
-        // Buttons live outside the ScrollView so they are always visible.
         RowLayout {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignRight
