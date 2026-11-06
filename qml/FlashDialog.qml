@@ -10,7 +10,6 @@ Controls.Dialog {
     title: qsTr("Create Flash Image")
     modal: true
     focus: true
-    popupType: Controls.Popup.Item
 
     implicitWidth: Math.max(400, layout.implicitWidth + 2 * layout.anchors.margins)
     implicitHeight: layout.implicitHeight + 2 * layout.anchors.margins
