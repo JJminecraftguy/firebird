@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Layouts
 import QtQuick.Controls as Controls
 import QtQuick.Dialogs as FBDialogs
@@ -11,18 +12,21 @@ Controls.Dialog {
     modal: true
     focus: true
 
-    // Size from the available screen area, not from the scrollable content.
-    // Overlay.overlay is the Popup overlay item; its size is the window size.
-    readonly property real _availW: Controls.Overlay.overlay ? Controls.Overlay.overlay.width  : 720
-    readonly property real _availH: Controls.Overlay.overlay ? Controls.Overlay.overlay.height : 1280
-    width:  Math.min(640, _availW - 32)
-    height: Math.min(860, _availH - 32)
+    // Size and position explicitly from the screen. Controls.Overlay.overlay
+    // is null at binding time (before the popup is shown), so the previous
+    // fallback sized the dialog for a 720x1280 screen on a 360x640 viewport,
+    // placing it off-screen. QtQuick.Window's Screen attached property
+    // reports logical pixels on Android and is available immediately.
+    width:  Math.max(320, Math.min(640, Screen.width  - 32))
+    height: Math.max(400, Math.min(860, Screen.height - 32))
+    x: (Screen.width  - width)  / 2
+    y: (Screen.height - height) / 2
 
     background: Rectangle {
         color: paletteActive.window
         border.color: paletteActive.mid
         border.width: 1
-    }
+  
 
     SystemPalette {
         id: paletteActive
