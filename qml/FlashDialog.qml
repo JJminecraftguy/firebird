@@ -1,17 +1,16 @@
 import QtQuick
 import QtQuick.Layouts
-import QtQuick.Controls
-import QtQuick.Dialogs
+import QtQuick.Controls as Controls
+import QtQuick.Dialogs as FBDialogs
 import Firebird.Emu 1.0
 import Firebird.UIComponents 1.0
 
-Dialog {
+Controls.Dialog {
     id: flashDialog
     title: qsTr("Create Flash Image")
     modal: true
     focus: true
-
-    popupType: Popup.Item
+    popupType: Controls.Popup.Item
 
     implicitWidth: Math.max(400, layout.implicitWidth + 2 * layout.anchors.margins)
     implicitHeight: layout.implicitHeight + 2 * layout.anchors.margins
@@ -22,7 +21,7 @@ Dialog {
         border.width: 1
     }
 
-    SystemPalette {
+    Controls.SystemPalette {
         id: paletteActive
     }
     readonly property color _fg: (paletteActive.window.hslLightness < 0.5) ? "white" : paletteActive.windowText
@@ -44,7 +43,7 @@ Dialog {
             text: qsTr("Model:")
         }
 
-        ComboBox {
+        Controls.ComboBox {
             id: modelCombo
             property bool cxSelected: modelCombo.currentIndex == 2 || modelCombo.currentIndex == 3
             property bool cx2Selected: modelCombo.currentIndex == 4
@@ -60,7 +59,7 @@ Dialog {
             text: qsTr("CX Subtype:")
         }
 
-        ComboBox {
+        Controls.ComboBox {
             id: subtypeCombo
             property int featureValue: [0x005, 0x085, 0x185][currentIndex]
             Layout.fillWidth: true
@@ -165,25 +164,25 @@ Dialog {
             Layout.columnSpan: 2
             Layout.alignment: Qt.AlignRight
 
-            Button {
+            Controls.Button {
                 text: qsTr("Cancel")
                 onClicked: flashDialog.close()
             }
 
-            Button {
+            Controls.Button {
                 text: qsTr("Save")
                 enabled: layout.validationText === ""
                 onClicked: {
                     // Don't close the dialog now, but only
                     // after successful saving
                     fileDialogLoader.active = true;
-                    fileDialogLoader.item.visible = true;
+                    fileDialogLoader.item.open();
                 }
             }
         }
     }
 
-    MessageDialog {
+    FBDialogs.MessageDialog {
         id: failureDialog
         title: qsTr("Flash saving failed")
         text: qsTr("Saving the flash file failed!")
@@ -192,8 +191,8 @@ Dialog {
     Loader {
         id: fileDialogLoader
         active: false
-        sourceComponent: FileDialog {
-            fileMode: FileDialog.SaveFile
+        sourceComponent: FBDialogs.FileDialog {
+            fileMode: FBDialogs.FileDialog.SaveFile
             onAccepted: {
                 var filePath = Emu.toLocalFile(selectedFile);
                 var success = false;
