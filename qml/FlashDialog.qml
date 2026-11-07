@@ -8,30 +8,25 @@ import Firebird.UIComponents 1.0
 Controls.Dialog {
     id: flashDialog
     title: qsTr("Create Flash Image")
-    header: null               // (1) hide the title bar
+    header: null                 // (1) no title bar
     modal: true
     focus: true
 
-    // Center in the overlay (fills the screen)
-    parent: Controls.Overlay.overlay
-    x: parent ? Math.max(10, (parent.width - width) / 2) : 10
-    y: parent ? Math.max(10, (parent.height - height) / 2) : 10  // (2) center
+    // (2) Popup's own centring: evaluated after layout, never fights `height`
+    anchors.centerIn: Controls.Overlay.overlay
 
-    readonly property real _maxW: parent ? parent.width  - 20 : 400
-    readonly property real _maxH: parent ? parent.height - 20 : 600
+    readonly property real _availW: Controls.Overlay.overlay ? Controls.Overlay.overlay.width  : 360
+    readonly property real _availH: Controls.Overlay.overlay ? Controls.Overlay.overlay.height : 640
 
-    // (3)(5) size to content, minimum 320, cap to screen
-    width:  Math.min(Math.max(implicitWidth,  320), _maxW)
-    height: Math.min(implicitHeight, _maxH)
+    // (5) narrower: content-based, min 320, capped by screen
+    width:  Math.min(Math.max(320, contentCol.implicitWidth + leftPadding + rightPadding), _availW - 20)
 
-    leftPadding: 5
-    rightPadding: 5
-    topPadding: 5
-    bottomPadding: 5
+    // (3) no gap: height equals content height when it fits, capped otherwise
+    height: Math.min(contentCol.implicitHeight + topPadding + bottomPadding, _availH - 20)
 
     background: Rectangle {
-        color: paletteActive.window
-        border.color: paletteActive.mid
+        color: paletteActive.window || "white"
+        border.color: paletteActive.mid || "#888888"
         border.width: 1
     }
 
@@ -45,24 +40,20 @@ Controls.Dialog {
 
     signal flashCreated(string filePath)
 
-    ColumnLayout {
-        id: column
-        anchors.fill: parent
+    contentItem: ColumnLayout {
+        id: contentCol
         spacing: 5
 
         Controls.ScrollView {
             id: scroller
             Layout.fillWidth: true
-            // (3) prefer the natural content height, capped so the button
-            // row is always visible on small screens
-            Layout.preferredHeight: Math.min(
-                layout.implicitHeight,
-                Math.max(100, _maxH - buttonRow.implicitHeight - 40))
+            Layout.fillHeight: true    // absorb shrink when dialog is capped
             clip: true
 
-            // (4) no horizontal scrolling; vertical only when needed
+            // (4) no horizontal drag, vertical only when needed
             Controls.ScrollBar.horizontal.policy: Controls.ScrollBar.AlwaysOff
             Controls.ScrollBar.vertical.policy:   Controls.ScrollBar.AsNeeded
+            boundsBehavior: Flickable.StopAtBounds
 
             GridLayout {
                 id: layout
