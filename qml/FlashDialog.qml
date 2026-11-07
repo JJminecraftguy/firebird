@@ -53,7 +53,6 @@ Controls.Dialog {
             // (4) no horizontal drag, vertical only when needed
             Controls.ScrollBar.horizontal.policy: Controls.ScrollBar.AlwaysOff
             Controls.ScrollBar.vertical.policy:   Controls.ScrollBar.AsNeeded
-            boundsBehavior: Flickable.StopAtBounds
 
             GridLayout {
                 id: layout
