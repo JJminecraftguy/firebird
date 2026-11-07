@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Window
 import QtQuick.Layouts
 import QtQuick.Controls as Controls
 import QtQuick.Dialogs as FBDialogs
@@ -12,10 +11,17 @@ Controls.Dialog {
     modal: true
     focus: true
 
-    width:  Math.max(320, Math.min(640, Screen.width  - 32))
-    height: Math.max(400, Math.min(860, Screen.height - 32))
-    x: (Screen.width  - width)  / 2
-    y: (Screen.height - height) / 2
+    // Positioning: keep exactly as-is — this is the part that works.
+    parent: Controls.Overlay.overlay
+    x: Math.max(10, (parent.width - width) / 2)
+    y: 10
+    width: Math.min(400, parent.width - 20)
+    height: Math.min(600, parent.height - y - 10)
+
+    leftPadding: 5
+    rightPadding: 5
+    topPadding: 5
+    bottomPadding: 5
 
     background: Rectangle {
         color: paletteActive.window
@@ -33,18 +39,22 @@ Controls.Dialog {
 
     signal flashCreated(string filePath)
 
+    // Single direct child => becomes the Dialog's contentItem, sized to the
+    // padding-inset area. The ScrollView (fields) and the button row are
+    // siblings, so buttons can never be clipped by the scroll region.
     ColumnLayout {
-        spacing: 8
+        anchors.fill: parent
+        spacing: 5
 
         Controls.ScrollView {
-            id: flashScroll
+            id: scroller
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
 
             GridLayout {
                 id: layout
-                width: flashScroll.availableWidth
+                width: scroller.availableWidth
                 columns: 2
                 columnSpacing: 5
                 rowSpacing: 5
@@ -158,13 +168,16 @@ Controls.Dialog {
 
                 FBLabel {
                     Layout.alignment: Qt.AlignCenter
-                    Layout.columnSpan: 2
+                    Layout.columnSpan: layout.columns
                     color: "red"
-                    text: parent.validationText
+                    text: layout.validationText
                 }
             }
         }
 
+        // Buttons OUTSIDE the ScrollView: always visible, never clipped,
+        // never scrolled away. Removing the old fillHeight spacer that
+        // pushed them to the bottom of the scrollable content.
         RowLayout {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignRight
