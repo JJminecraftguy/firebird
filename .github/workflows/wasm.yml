@@ -7,6 +7,9 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -42,18 +45,12 @@ jobs:
           QTC="$QT_ROOT_DIR/bin/qt-cmake"
           test -f "$QTC" || { echo "error: $QTC missing" >&2; ls -la "$QT_ROOT_DIR/bin" >&2; exit 1; }
 
-          # The cached wasm Qt tree can come back without the exec bit on
-          # bin/*. Repair it, then invoke via sh so a missing bit can never
-          # fail the step again.
           find "$QT_ROOT_DIR/bin" "$QT_ROOT_DIR/libexec" \
             -maxdepth 1 -type f -exec chmod +x {} + 2>/dev/null || true
 
           sh "$QTC" --version
           cmake --version
 
-      # qt-cmake picks up Qt's wasm toolchain (qt.toolchain.cmake) from the
-      # installed Qt automatically, including the emscripten setup. No
-      # -DCMAKE_TOOLCHAIN_FILE or -DQT_HOST_PATH flags are needed.
       - name: Configure (CMake)
         run: |
           set -eux
@@ -88,8 +85,6 @@ jobs:
           cp build/firebird-emu.js artifacts/
           cp build/firebird-emu.wasm artifacts/
           cp build/qtloader.js artifacts/
-          # Optional cosmetic asset; older Qt versions include it, some newer
-          # ones don't. Don't fail the build if it's absent.
           cp build/qtlogo.svg artifacts/ 2>/dev/null || true
 
       - name: Upload artifact
@@ -98,3 +93,13 @@ jobs:
           name: firebird-emu-wasm
           path: artifacts/
           if-no-files-found: error
+
+      - name: Deploy to gh-pages/wasm
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./artifacts
+          destination_dir: wasm
+          keep_files: true
+          commit_message: "Deploy wasm ${{ github.sha }}"
