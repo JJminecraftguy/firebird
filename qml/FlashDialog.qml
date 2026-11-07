@@ -4,6 +4,7 @@ Item {
     id: root
     width: 0
     height: 0
+    visible: false 
 
     readonly property bool _isAndroid: Qt.platform.os === "android"
 
