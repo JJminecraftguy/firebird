@@ -183,17 +183,17 @@ Controls.Dialog {
             spacing: 8
 
             Controls.Button {
-                text: qsTr("Cancel")
-                onClicked: flashDialog.close()
-            }
-
-            Controls.Button {
                 text: qsTr("Save")
                 enabled: layout.validationText === ""
                 onClicked: {
                     fileDialogLoader.active = true;
                     fileDialogLoader.item.open();
                 }
+            }
+
+            Controls.Button {
+                text: qsTr("Cancel")
+                onClicked: flashDialog.close()
             }
         }
     }
