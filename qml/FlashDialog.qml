@@ -8,15 +8,21 @@ import Firebird.UIComponents 1.0
 Controls.Dialog {
     id: flashDialog
     title: qsTr("Create Flash Image")
+    header: null               // (1) hide the title bar
     modal: true
     focus: true
 
-    // Positioning: keep exactly as-is — this is the part that works.
+    // Center in the overlay (fills the screen)
     parent: Controls.Overlay.overlay
-    x: Math.max(10, (parent.width - width) / 2)
-    y: 10
-    width: Math.min(400, parent.width - 20)
-    height: Math.min(600, parent.height - y - 10)
+    x: parent ? Math.max(10, (parent.width - width) / 2) : 10
+    y: parent ? Math.max(10, (parent.height - height) / 2) : 10  // (2) center
+
+    readonly property real _maxW: parent ? parent.width  - 20 : 400
+    readonly property real _maxH: parent ? parent.height - 20 : 600
+
+    // (3)(5) size to content, minimum 320, cap to screen
+    width:  Math.min(Math.max(implicitWidth,  320), _maxW)
+    height: Math.min(implicitHeight, _maxH)
 
     leftPadding: 5
     rightPadding: 5
@@ -39,18 +45,24 @@ Controls.Dialog {
 
     signal flashCreated(string filePath)
 
-    // Single direct child => becomes the Dialog's contentItem, sized to the
-    // padding-inset area. The ScrollView (fields) and the button row are
-    // siblings, so buttons can never be clipped by the scroll region.
     ColumnLayout {
+        id: column
         anchors.fill: parent
         spacing: 5
 
         Controls.ScrollView {
             id: scroller
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            // (3) prefer the natural content height, capped so the button
+            // row is always visible on small screens
+            Layout.preferredHeight: Math.min(
+                layout.implicitHeight,
+                Math.max(100, _maxH - buttonRow.implicitHeight - 40))
             clip: true
+
+            // (4) no horizontal scrolling; vertical only when needed
+            Controls.ScrollBar.horizontal.policy: Controls.ScrollBar.AlwaysOff
+            Controls.ScrollBar.vertical.policy:   Controls.ScrollBar.AsNeeded
 
             GridLayout {
                 id: layout
@@ -96,7 +108,6 @@ Controls.Dialog {
 
                 FileSelect {
                     id: manufSelect
-                    Layout.maximumWidth: parent.width
                     Layout.fillWidth: true
                     subtext: filePath ? Emu.manufDescription(filePath) : ""
                 }
@@ -175,10 +186,8 @@ Controls.Dialog {
             }
         }
 
-        // Buttons OUTSIDE the ScrollView: always visible, never clipped,
-        // never scrolled away. Removing the old fillHeight spacer that
-        // pushed them to the bottom of the scrollable content.
         RowLayout {
+            id: buttonRow
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignRight
             spacing: 8
