@@ -366,7 +366,10 @@ target_compile_options(firebird-emu PRIVATE -g -Wall -Wextra)
 if(EMSCRIPTEN OR CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
     target_compile_options(firebird-emu PRIVATE "-sUSE_ZLIB=1")
     target_link_options(firebird-emu PRIVATE "-sUSE_ZLIB=1")
-    target_link_options(firebird-emu PRIVATE "-sASYNCIFY" "-Os")
+    target_link_options(firebird-emu PRIVATE
+        "-sASYNCIFY"
+        "-sASYNCIFY_STACK_SIZE=65536"
+        "-Os")
 else()
     find_package(ZLIB REQUIRED)
     target_link_libraries(firebird-emu PRIVATE ZLIB::ZLIB)
