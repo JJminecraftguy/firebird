@@ -1,0 +1,550 @@
+diff --git a/FIREBIRD_DUMPER.md b/FIREBIRD_DUMPER.md
+new file mode 100644
+index 0000000..d20f094
+--- /dev/null
++++ b/FIREBIRD_DUMPER.md
+@@ -0,0 +1,16 @@
++# Dumper patch
++
++Exports emulator state for reverse engineering. Set environment variables before starting Firebird (GUI or headless):
++
++    FB_DUMP_DIR=/path/to/out      # enables the dumper
++    FB_DUMP_INTERVAL=60           # optional: auto dump every 60 s
++    # touch /path/to/out/DUMP_NOW  -> dump immediately (file is deleted afterwards)
++    # a dump is also written on exit, and with the debugger command: dump <dir> [tag]
++
++Each dump writes (prefix = tag, e.g. exit_, manual000_, auto000_):
++ * `_phys_<base>.bin`  every physical RAM area (SDRAM is at 10000000, boot ROM at 0, SRAM etc.), `_physmap.txt` indexes them
++ * `_virt_<va>_<size>.bin` + `_vmap.txt`  RAM-backed regions as the OS maps them via the MMU
++ * `_cpu.txt`  registers, CP15 control/TTB/domain
++ * `_carved_<addr>.zip`  ZIP archives found in RAM (a decrypted OS image is a zip containing the OS binary)
++ * `_nand.bin`  raw NAND incl. OOB (2112-byte pages on CX II), current state, including unsaved changes
++Toggle parts with FB_DUMP_VIRT / FB_DUMP_CARVE / FB_DUMP_NAND = 0.
+diff --git a/core/debug.cpp b/core/debug.cpp
+index aef9788..ea5a7e7 100644
+--- a/core/debug.cpp
++++ b/core/debug.cpp
+@@ -20,6 +20,7 @@
+ 
+ #include "armsnippets.h"
+ #include "debug.h"
++#include "dumper.h"
+ #include "interrupt.h"
+ #include "emu.h"
+ #include "cpu.h"
+@@ -194,6 +195,7 @@ int process_debug_cmd(char *cmdline) {
+                     "b - stack backtrace\n"
+                     "c - continue\n"
+                     "d <address> - dump memory\n"
++                    "dump <dir> [tag] - export RAM, NAND, MMU/CPU state and carved zips to <dir>\n"
+                     "k <address> <+r|+w|+x|-r|-w|-x> - add/remove breakpoint\n"
+                     "k - show breakpoints\n"
+                     "ln c - connect\n"
+@@ -217,6 +219,14 @@ int process_debug_cmd(char *cmdline) {
+     } else if (!strcasecmp(cmd, "b")) {
+         char *fp = strtok(NULL, " \n\r");
+         backtrace(fp ? parse_expr(fp) : arm.reg[11]);
++    } else if (!strcasecmp(cmd, "dump")) {
++        char *dir = strtok(NULL, " \n\r");
++        char *tag = strtok(NULL, " \n\r");
++        if (!dir) {
++            gui_debug_printf("Usage: dump <dir> [tag]\n");
++            return 0;
++        }
++        dumper_dump_all(dir, tag ? tag : "dbg");
+     } else if (!strcasecmp(cmd, "mmu")) {
+         mmu_dump_tables();
+     } else if (!strcasecmp(cmd, "r")) {
+diff --git a/core/dumper.cpp b/core/dumper.cpp
+new file mode 100644
+index 0000000..f1f87e0
+--- /dev/null
++++ b/core/dumper.cpp
+@@ -0,0 +1,337 @@
++#include <algorithm>
++#include <chrono>
++#include <cstdint>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <string>
++#include <vector>
++
++#ifdef _WIN32
++#include <direct.h>
++#else
++#include <sys/stat.h>
++#include <sys/types.h>
++#endif
++
++#include "dumper.h"
++#include "emu.h"
++#include "cpu.h"
++#include "mem.h"
++#include "mmu.h"
++#include "flash.h"
++#include "os/os.h"
++
++static bool env_flag(const char *name, bool def)
++{
++    const char *v = getenv(name);
++    if(!v || !*v)
++        return def;
++    return !(v[0] == '0' || v[0] == 'n' || v[0] == 'N' || v[0] == 'f' || v[0] == 'F');
++}
++
++static void make_dir(const char *dir)
++{
++#ifdef _WIN32
++    _mkdir(dir);
++#else
++    mkdir(dir, 0777);
++#endif
++}
++
++static std::string join(const char *dir, const std::string &name)
++{
++    std::string d = dir;
++    if(!d.empty() && d.back() != '/' && d.back() != '\\')
++        d += '/';
++    return d + name;
++}
++
++static bool write_file(const std::string &path, const void *data, size_t size)
++{
++    FILE *f = fopen_utf8(path.c_str(), "wb");
++    if(!f)
++    {
++        gui_perror(path.c_str());
++        return false;
++    }
++    bool ok = size == 0 || fwrite(data, size, 1, f) == 1;
++    fclose(f);
++    if(!ok)
++        gui_perror(path.c_str());
++    return ok;
++}
++
++static std::string hex8(uint32_t v)
++{
++    char b[16];
++    snprintf(b, sizeof(b), "%08x", v);
++    return b;
++}
++
++/* ---- CPU state ---------------------------------------------------------- */
++static void dump_cpu(const char *dir, const std::string &tag)
++{
++    FILE *f = fopen_utf8(join(dir, tag + "_cpu.txt").c_str(), "wb");
++    if(!f)
++        return;
++    for(int i = 0; i < 16; i++)
++        fprintf(f, "r%d=%08x\n", i, arm.reg[i]);
++    uint32_t cpsr = arm.cpsr_low28 | (arm.cpsr_n << 31) | (arm.cpsr_z << 30)
++                    | (arm.cpsr_c << 29) | (arm.cpsr_v << 28);
++    fprintf(f, "cpsr=%08x\n", cpsr);
++    fprintf(f, "cp15_control=%08x\n", arm.control);
++    fprintf(f, "cp15_ttb=%08x\n", arm.translation_table_base);
++    fprintf(f, "cp15_domain=%08x\n", arm.domain_access_control);
++    fprintf(f, "fault_address=%08x\n", arm.fault_address);
++    fprintf(f, "r13_svc=%08x r14_svc=%08x spsr_svc=%08x\n", arm.r13_svc[0], arm.r13_svc[1], arm.spsr_svc);
++    fprintf(f, "r13_irq=%08x r14_irq=%08x spsr_irq=%08x\n", arm.r13_irq[0], arm.r13_irq[1], arm.spsr_irq);
++    fprintf(f, "r13_usr=%08x r14_usr=%08x\n", arm.r13_usr[0], arm.r13_usr[1]);
++    fclose(f);
++}
++
++/* ---- Physical memory ---------------------------------------------------- */
++static void dump_phys(const char *dir, const std::string &tag)
++{
++    FILE *idx = fopen_utf8(join(dir, tag + "_physmap.txt").c_str(), "wb");
++    for(unsigned i = 0; i < sizeof(mem_areas) / sizeof(*mem_areas); i++)
++    {
++        if(!mem_areas[i].ptr || !mem_areas[i].size)
++            continue;
++        std::string name = tag + "_phys_" + hex8(mem_areas[i].base) + ".bin";
++        write_file(join(dir, name), mem_areas[i].ptr, mem_areas[i].size);
++        if(idx)
++            fprintf(idx, "%s base=%08x size=%08x\n", name.c_str(), mem_areas[i].base, mem_areas[i].size);
++    }
++    if(idx)
++        fclose(idx);
++}
++
++/* ---- MMU walk (ARM926 short descriptors) -------------------------------- */
++struct mapping { uint32_t virt, phys, size, desc; };
++
++static void add_mapping(std::vector<mapping> &v, uint32_t virt, uint32_t phys, uint32_t size, uint32_t desc)
++{
++    /* Merge with previous mapping when both virtual and physical are contiguous
++     * and the access permissions (bits 4..11 are AP/domain, kept in desc) match. */
++    if(!v.empty())
++    {
++        mapping &m = v.back();
++        if(m.virt + m.size == virt && m.phys + m.size == phys && (m.desc & 0xFF0) == (desc & 0xFF0))
++        {
++            m.size += size;
++            return;
++        }
++    }
++    v.push_back({virt, phys, size, desc});
++}
++
++static std::vector<mapping> walk_mmu()
++{
++    std::vector<mapping> res;
++    if(!(arm.control & 1))
++    {
++        /* MMU off: identity mapping of all RAM areas */
++        for(unsigned i = 0; i < sizeof(mem_areas) / sizeof(*mem_areas); i++)
++            if(mem_areas[i].ptr && mem_areas[i].size)
++                res.push_back({mem_areas[i].base, mem_areas[i].base, mem_areas[i].size, 0});
++        return res;
++    }
++
++    uint32_t *tt = (uint32_t *)phys_mem_ptr(arm.translation_table_base & ~0x3FFFu, 0x4000);
++    if(!tt)
++        return res;
++
++    for(uint32_t i = 0; i < 0x1000; i++)
++    {
++        uint32_t e = tt[i];
++        uint32_t vbase = i << 20;
++        switch(e & 3)
++        {
++        case 2: /* section */
++            add_mapping(res, vbase, e & 0xFFF00000, 0x100000, e);
++            break;
++        case 1: /* coarse page table */
++        {
++            uint32_t *l2 = (uint32_t *)phys_mem_ptr(e & 0xFFFFFC00, 0x400);
++            if(!l2)
++                break;
++            for(uint32_t j = 0; j < 256; j++)
++            {
++                uint32_t p = l2[j];
++                uint32_t v = vbase + (j << 12);
++                if((p & 3) == 1) /* large page: replicated 16 times, handle at first slot */
++                {
++                    if((j & 15) == 0)
++                        add_mapping(res, v, p & 0xFFFF0000, 0x10000, p);
++                }
++                else if((p & 3) == 2) /* small page */
++                    add_mapping(res, v, p & 0xFFFFF000, 0x1000, p);
++            }
++            break;
++        }
++        case 3: /* fine page table (tiny pages), rarely used */
++        {
++            uint32_t *l2 = (uint32_t *)phys_mem_ptr(e & 0xFFFFF000, 0x1000);
++            if(!l2)
++                break;
++            for(uint32_t j = 0; j < 1024; j++)
++            {
++                uint32_t p = l2[j];
++                uint32_t v = vbase + (j << 10);
++                if((p & 3) == 3)
++                    add_mapping(res, v, p & 0xFFFFFC00, 0x400, p);
++            }
++            break;
++        }
++        }
++    }
++    return res;
++}
++
++static void dump_virt(const char *dir, const std::string &tag)
++{
++    std::vector<mapping> maps = walk_mmu();
++    FILE *idx = fopen_utf8(join(dir, tag + "_vmap.txt").c_str(), "wb");
++    for(const mapping &m : maps)
++    {
++        void *p = phys_mem_ptr(m.phys, m.size);
++        std::string name;
++        if(p)
++        {
++            name = tag + "_virt_" + hex8(m.virt) + "_" + hex8(m.size) + ".bin";
++            write_file(join(dir, name), p, m.size);
++        }
++        if(idx)
++            fprintf(idx, "virt=%08x phys=%08x size=%08x desc=%08x %s\n", m.virt, m.phys, m.size, m.desc,
++                    p ? name.c_str() : "(not RAM backed, e.g. MMIO)");
++    }
++    if(idx)
++        fclose(idx);
++}
++
++/* ---- ZIP carving -------------------------------------------------------- */
++static void carve_zips(const char *dir, const std::string &tag)
++{
++    int count = 0;
++    for(unsigned i = 0; i < sizeof(mem_areas) / sizeof(*mem_areas); i++)
++    {
++        const uint8_t *base = mem_areas[i].ptr;
++        size_t size = mem_areas[i].size;
++        if(!base || size < 0x10000)
++            continue;
++
++        size_t pos = 0;
++        while(pos + 30 < size && count < 64)
++        {
++            const uint8_t *hit = (const uint8_t *)memchr(base + pos, 'P', size - pos - 30);
++            if(!hit)
++                break;
++            size_t off = hit - base;
++            pos = off + 1;
++            if(memcmp(hit, "PK\x03\x04", 4) != 0)
++                continue;
++
++            /* Find the end of central directory record */
++            size_t limit = std::min<size_t>(size, off + 64 * 1024 * 1024);
++            size_t eocd = 0;
++            for(size_t k = off + 30; k + 22 <= limit; k++)
++            {
++                if(base[k] == 'P' && !memcmp(base + k, "PK\x05\x06", 4))
++                {
++                    eocd = k;
++                    /* keep first EOCD whose comment length fits */
++                    uint16_t clen = base[k + 20] | (base[k + 21] << 8);
++                    if(k + 22 + clen <= size)
++                        break;
++                    eocd = 0;
++                }
++            }
++            if(!eocd)
++                continue;
++            uint16_t clen = base[eocd + 20] | (base[eocd + 21] << 8);
++            size_t end = eocd + 22 + clen;
++            if(end - off < 4096)
++                continue;
++
++            std::string name = tag + "_carved_" + hex8(mem_areas[i].base + (uint32_t)off) + ".zip";
++            if(write_file(join(dir, name), base + off, end - off))
++            {
++                emuprintf("Dumper: carved %s (%zu bytes)\n", name.c_str(), end - off);
++                count++;
++            }
++            pos = end;
++        }
++    }
++}
++
++/* ---- Main entry --------------------------------------------------------- */
++int dumper_dump_all(const char *dir, const char *tag_c)
++{
++    std::string tag = tag_c ? tag_c : "dump";
++    make_dir(dir);
++    emuprintf("Dumper: writing '%s' to %s ...\n", tag.c_str(), dir);
++
++    dump_cpu(dir, tag);
++    dump_phys(dir, tag);
++    if(env_flag("FB_DUMP_VIRT", true))
++        dump_virt(dir, tag);
++    if(env_flag("FB_DUMP_CARVE", true))
++        carve_zips(dir, tag);
++    if(env_flag("FB_DUMP_NAND", true))
++        flash_dump_raw(join(dir, tag + "_nand.bin").c_str());
++
++    emuprintf("Dumper: done.\n");
++    return 0;
++}
++
++static std::chrono::steady_clock::time_point last_dump = std::chrono::steady_clock::now();
++static std::chrono::steady_clock::time_point last_poll = std::chrono::steady_clock::now();
++static unsigned poll_ctr = 0;
++static unsigned dump_seq = 0;
++
++void dumper_poll(void)
++{
++    if((++poll_ctr & 0x3FF) != 0)
++        return;
++
++    const char *dir = getenv("FB_DUMP_DIR");
++    if(!dir || !*dir)
++        return;
++
++    auto now = std::chrono::steady_clock::now();
++    if(now - last_poll < std::chrono::seconds(1))
++        return;
++    last_poll = now;
++
++    /* Trigger file */
++    std::string trig = join(dir, "DUMP_NOW");
++    if(FILE *f = fopen_utf8(trig.c_str(), "rb"))
++    {
++        fclose(f);
++        remove(trig.c_str());
++        char tag[32];
++        snprintf(tag, sizeof(tag), "manual%03u", dump_seq++);
++        dumper_dump_all(dir, tag);
++        last_dump = std::chrono::steady_clock::now();
++        return;
++    }
++
++    const char *iv = getenv("FB_DUMP_INTERVAL");
++    long secs = iv ? atol(iv) : 0;
++    if(secs > 0 && now - last_dump >= std::chrono::seconds(secs))
++    {
++        char tag[32];
++        snprintf(tag, sizeof(tag), "auto%03u", dump_seq++);
++        dumper_dump_all(dir, tag);
++        last_dump = std::chrono::steady_clock::now();
++    }
++}
++
++void dumper_on_exit(void)
++{
++    const char *dir = getenv("FB_DUMP_DIR");
++    if(!dir || !*dir || !env_flag("FB_DUMP_ON_EXIT", true))
++        return;
++    dumper_dump_all(dir, "exit");
++}
+diff --git a/core/dumper.h b/core/dumper.h
+new file mode 100644
+index 0000000..06edcc0
+--- /dev/null
++++ b/core/dumper.h
+@@ -0,0 +1,31 @@
++/* Dumper: export RAM, NAND, CPU/MMU state and carved zip archives
++ * from the running emulation, for reverse engineering.
++ *
++ * Environment variables (all optional, dumper is inactive without FB_DUMP_DIR
++ * unless the debugger command "dump <dir>" is used):
++ *   FB_DUMP_DIR       output directory (created if missing)
++ *   FB_DUMP_INTERVAL  seconds between automatic dumps (0/unset = off)
++ *   FB_DUMP_ON_EXIT   1 (default when FB_DUMP_DIR set) / 0: dump at shutdown
++ *   FB_DUMP_NAND      1 (default) / 0: include the raw NAND image
++ *   FB_DUMP_VIRT      1 (default) / 0: include MMU-mapped virtual regions
++ *   FB_DUMP_CARVE     1 (default) / 0: carve embedded ZIP files out of RAM
++ *   Creating the file <FB_DUMP_DIR>/DUMP_NOW triggers a dump (file is removed). */
++#ifndef _H_DUMPER
++#define _H_DUMPER
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++/* Perform a full dump into dir, files are prefixed with tag. Returns 0 on success. */
++int dumper_dump_all(const char *dir, const char *tag);
++/* Cheap; call regularly from the emulation loop. */
++void dumper_poll(void);
++/* Call when the emulation ends. */
++void dumper_on_exit(void);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif
+diff --git a/core/emu.cpp b/core/emu.cpp
+index 2ab6456..f5ea419 100644
+--- a/core/emu.cpp
++++ b/core/emu.cpp
+@@ -19,6 +19,7 @@
+ #include "schedule.h"
+ #include "misc.h"
+ #include "mem.h"
++#include "dumper.h"
+ 
+ /* cycle_count_delta is a (usually negative) number telling what the time is relative
+  * to the next scheduled event. See sched.c */
+@@ -347,6 +348,7 @@ void emu_loop(bool reset)
+ 
+     while (!exiting) {
+         sched_process_pending_events();
++        dumper_poll();
+         while (!exiting && cycle_count_delta < 0) {
+             if (cpu_events & EVENT_RESET) {
+                 gui_status_printf("Reset");
+@@ -432,6 +434,8 @@ void emu_cleanup()
+ {
+     exiting = true;
+ 
++    dumper_on_exit();
++
+     // addr_cache_init is rather expensive and needs to be called once only
+     //addr_cache_deinit();
+ 
+diff --git a/core/flash.cpp b/core/flash.cpp
+index 12a1ce8..d57edc2 100644
+--- a/core/flash.cpp
++++ b/core/flash.cpp
+@@ -459,6 +459,21 @@ bool flash_save_changes() {
+     return true;
+ }
+ 
++bool flash_dump_raw(const char *filename) {
++    if (!nand_data)
++        return false;
++    FILE *f = fopen_utf8(filename, "wb");
++    if (!f) {
++        gui_perror(filename);
++        return false;
++    }
++    bool ok = fwrite(nand_data, nand.metrics.page_size, nand.metrics.num_pages, f) == nand.metrics.num_pages;
++    ok = (fclose(f) == 0) && ok;
++    if (!ok)
++        gui_perror(filename);
++    return ok;
++}
++
+ int flash_save_as(const char *filename) {
+     FILE *f = fopen_utf8(filename, "wb");
+     if (!f) {
+diff --git a/core/flash.h b/core/flash.h
+index a6aa372..14daed8 100644
+--- a/core/flash.h
++++ b/core/flash.h
+@@ -111,6 +111,7 @@ bool flash_suspend(struct emu_snapshot *snapshot);
+ bool flash_resume(const struct emu_snapshot *snapshot);
+ bool flash_save_changes();
+ int flash_save_as(const char *filename);
++bool flash_dump_raw(const char *filename); /* raw NAND incl. OOB, as the emulator sees it right now */
+ bool flash_create_new(bool flag_large_nand, const char **preload_file, unsigned int product, unsigned int features, bool large_sdram, uint8_t **nand_data_ptr, size_t *size);
+ bool flash_read_settings(uint32_t *sdram_size, uint32_t *product, uint32_t *features, uint32_t *asic_user_flags);
+ void flash_set_bootorder(BootOrder order);
+diff --git a/emscripten/Makefile b/emscripten/Makefile
+index 878fed4..1e4aa31 100644
+--- a/emscripten/Makefile
++++ b/emscripten/Makefile
+@@ -11,7 +11,7 @@ CSOURCES :=    ../core/armsnippets_loader.c ../core/asmcode.c ../core/casplus.c
+ 	      ../core/misc.c ../core/mmu.c ../core/schedule.c ../core/serial.c ../core/sha256.c ../core/usb.c \
+               ../core/usblink.c ../core/os/os-emscripten.c
+ 
+-CPPSOURCES := ../core/arm_interpreter.cpp ../core/coproc.cpp ../core/cpu.cpp ../core/debug.cpp ../core/emu.cpp \
++CPPSOURCES := ../core/arm_interpreter.cpp ../core/coproc.cpp ../core/cpu.cpp ../core/debug.cpp ../core/dumper.cpp ../core/emu.cpp \
+ 	      ../core/flash.cpp ../core/gif.cpp ../core/thumb_interpreter.cpp ../core/usblink_queue.cpp main.cpp \
+ 	      ../core/fieldparser.cpp
+ 
+diff --git a/firebird.pro b/firebird.pro
+index ecd50d6..fb2d7c7 100644
+--- a/firebird.pro
++++ b/firebird.pro
+@@ -191,6 +191,7 @@ SOURCES += $$ASMCODE_IMPL \
+     core/usblink_cx2.cpp \
+     qtframebuffer.cpp \
+     core/debug.cpp \
++    core/dumper.cpp \
+     core/flash.cpp \
+     core/emu.cpp \
+     usblinktreewidget.cpp \
+@@ -223,6 +224,7 @@ HEADERS += \
+     core/cpu.h \
+     core/cpudefs.h \
+     core/debug.h \
++    core/dumper.h \
+     core/des.h \
+     core/disasm.h \
+     core/emu.h \
+diff --git a/headless/Makefile b/headless/Makefile
+index 28833d8..ca6624c 100644
+--- a/headless/Makefile
++++ b/headless/Makefile
+@@ -46,7 +46,7 @@ CSOURCES   += ../core/armsnippets_loader.c ../core/casplus.c ../core/des.c ../co
+               ../core/mmu.c ../core/schedule.c ../core/serial.c ../core/sha256.c ../core/usb.c ../core/usblink.c \
+               ../core/os/os-linux.c
+ 
+-CPPSOURCES += ../core/arm_interpreter.cpp ../core/coproc.cpp ../core/cpu.cpp ../core/debug.cpp ../core/emu.cpp \
++CPPSOURCES += ../core/arm_interpreter.cpp ../core/coproc.cpp ../core/cpu.cpp ../core/debug.cpp ../core/dumper.cpp ../core/emu.cpp \
+               ../core/flash.cpp ../core/gif.cpp ../core/thumb_interpreter.cpp ../core/usblink_queue.cpp main.cpp \
+               ../core/keypad.cpp ../core/cx2.cpp ../core/usb_cx2.cpp ../core/usblink_cx2.cpp ../core/fieldparser.cpp
+ 

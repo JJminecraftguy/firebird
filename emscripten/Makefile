@@ -11,7 +11,7 @@ CSOURCES :=    ../core/armsnippets_loader.c ../core/asmcode.c ../core/casplus.c 
 	      ../core/misc.c ../core/mmu.c ../core/schedule.c ../core/serial.c ../core/sha256.c ../core/usb.c \
               ../core/usblink.c ../core/os/os-emscripten.c
 
-CPPSOURCES := ../core/arm_interpreter.cpp ../core/coproc.cpp ../core/cpu.cpp ../core/debug.cpp ../core/emu.cpp \
+CPPSOURCES := ../core/arm_interpreter.cpp ../core/coproc.cpp ../core/cpu.cpp ../core/debug.cpp ../core/dumper.cpp ../core/emu.cpp \
 	      ../core/flash.cpp ../core/gif.cpp ../core/thumb_interpreter.cpp ../core/usblink_queue.cpp main.cpp \
 	      ../core/fieldparser.cpp
 

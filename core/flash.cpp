@@ -459,6 +459,21 @@ bool flash_save_changes() {
     return true;
 }
 
+bool flash_dump_raw(const char *filename) {
+    if (!nand_data)
+        return false;
+    FILE *f = fopen_utf8(filename, "wb");
+    if (!f) {
+        gui_perror(filename);
+        return false;
+    }
+    bool ok = fwrite(nand_data, nand.metrics.page_size, nand.metrics.num_pages, f) == nand.metrics.num_pages;
+    ok = (fclose(f) == 0) && ok;
+    if (!ok)
+        gui_perror(filename);
+    return ok;
+}
+
 int flash_save_as(const char *filename) {
     FILE *f = fopen_utf8(filename, "wb");
     if (!f) {

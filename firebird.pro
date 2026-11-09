@@ -191,6 +191,7 @@ SOURCES += $$ASMCODE_IMPL \
     core/usblink_cx2.cpp \
     qtframebuffer.cpp \
     core/debug.cpp \
+    core/dumper.cpp \
     core/flash.cpp \
     core/emu.cpp \
     usblinktreewidget.cpp \
@@ -223,6 +224,7 @@ HEADERS += \
     core/cpu.h \
     core/cpudefs.h \
     core/debug.h \
+    core/dumper.h \
     core/des.h \
     core/disasm.h \
     core/emu.h \

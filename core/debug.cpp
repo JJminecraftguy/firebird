@@ -20,6 +20,7 @@
 
 #include "armsnippets.h"
 #include "debug.h"
+#include "dumper.h"
 #include "interrupt.h"
 #include "emu.h"
 #include "cpu.h"
@@ -194,6 +195,7 @@ int process_debug_cmd(char *cmdline) {
                     "b - stack backtrace\n"
                     "c - continue\n"
                     "d <address> - dump memory\n"
+                    "dump <dir> [tag] - export RAM, NAND, MMU/CPU state and carved zips to <dir>\n"
                     "k <address> <+r|+w|+x|-r|-w|-x> - add/remove breakpoint\n"
                     "k - show breakpoints\n"
                     "ln c - connect\n"
@@ -217,6 +219,14 @@ int process_debug_cmd(char *cmdline) {
     } else if (!strcasecmp(cmd, "b")) {
         char *fp = strtok(NULL, " \n\r");
         backtrace(fp ? parse_expr(fp) : arm.reg[11]);
+    } else if (!strcasecmp(cmd, "dump")) {
+        char *dir = strtok(NULL, " \n\r");
+        char *tag = strtok(NULL, " \n\r");
+        if (!dir) {
+            gui_debug_printf("Usage: dump <dir> [tag]\n");
+            return 0;
+        }
+        dumper_dump_all(dir, tag ? tag : "dbg");
     } else if (!strcasecmp(cmd, "mmu")) {
         mmu_dump_tables();
     } else if (!strcasecmp(cmd, "r")) {

@@ -19,6 +19,7 @@
 #include "schedule.h"
 #include "misc.h"
 #include "mem.h"
+#include "dumper.h"
 
 /* cycle_count_delta is a (usually negative) number telling what the time is relative
  * to the next scheduled event. See sched.c */
@@ -347,6 +348,7 @@ void emu_loop(bool reset)
 
     while (!exiting) {
         sched_process_pending_events();
+        dumper_poll();
         while (!exiting && cycle_count_delta < 0) {
             if (cpu_events & EVENT_RESET) {
                 gui_status_printf("Reset");
@@ -431,6 +433,8 @@ bool emu_suspend(const char *file)
 void emu_cleanup()
 {
     exiting = true;
+
+    dumper_on_exit();
 
     // addr_cache_init is rather expensive and needs to be called once only
     //addr_cache_deinit();
